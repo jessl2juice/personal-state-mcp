@@ -1,7 +1,14 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("kotlin-parcelize")
 }
+
+val samsungSdkAar = providers.environmentVariable("SAMSUNG_HEALTH_DATA_SDK_AAR")
+    .orElse(providers.gradleProperty("samsungHealthDataSdkAar"))
+    .orNull
+    ?.let(::file)
+    ?.takeIf { it.isFile }
 
 android {
     namespace = "ai.clinicianassist.personalstate"
@@ -9,10 +16,10 @@ android {
 
     defaultConfig {
         applicationId = "ai.clinicianassist.personalstate"
-        minSdk = 28
+        minSdk = if (samsungSdkAar == null) 28 else 29
         targetSdk = 35
-        versionCode = 20000
-        versionName = "0.2.0"
+        versionCode = 30000
+        versionName = "0.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -44,6 +51,10 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { viewBinding = true }
+
+    if (samsungSdkAar != null) {
+        sourceSets.getByName("main").java.srcDir("src/samsungSdk/java")
+    }
 }
 
 dependencies {
@@ -57,6 +68,10 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("com.google.android.gms:play-services-wearable:20.0.1")
+    if (samsungSdkAar != null) {
+        implementation(files(samsungSdkAar))
+        implementation("com.google.code.gson:gson:2.11.0")
+    }
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

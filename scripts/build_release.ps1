@@ -1,7 +1,8 @@
 param(
-    [string]$Version = "0.2.0",
+    [string]$Version = "0.3.0",
     [string]$PythonPath = "$PSScriptRoot\..\.venv\Scripts\python.exe",
     [string]$SigningRoot = "$env:LOCALAPPDATA\PersonalStateMCP\release-signing",
+    [string]$SamsungSdkAar = "",
     [switch]$SkipAndroid,
     [switch]$SkipTests
 )
@@ -31,6 +32,14 @@ if (-not $SkipTests) {
 if ($LASTEXITCODE -ne 0) { throw "Python release package build failed." }
 
 if (-not $SkipAndroid) {
+    $previousSamsungSdkAar = $env:SAMSUNG_HEALTH_DATA_SDK_AAR
+    if ($SamsungSdkAar) {
+        $resolvedSamsungSdkAar = (Resolve-Path -LiteralPath $SamsungSdkAar).Path
+        if ([IO.Path]::GetExtension($resolvedSamsungSdkAar) -ne ".aar") {
+            throw "SamsungSdkAar must point to the licensed Samsung Health Data SDK AAR."
+        }
+        $env:SAMSUNG_HEALTH_DATA_SDK_AAR = $resolvedSamsungSdkAar
+    }
     if ($env:ANDROID_USER_HOME) {
         New-Item -ItemType Directory -Path $env:ANDROID_USER_HOME -Force | Out-Null
     }
@@ -65,6 +74,11 @@ if (-not $SkipAndroid) {
         Remove-Item Env:PERSONAL_STATE_ANDROID_STORE_PASSWORD -ErrorAction SilentlyContinue
         Remove-Item Env:PERSONAL_STATE_ANDROID_KEY_PASSWORD -ErrorAction SilentlyContinue
         Remove-Item Env:PERSONAL_STATE_ANDROID_KEY_ALIAS -ErrorAction SilentlyContinue
+        if ($null -ne $previousSamsungSdkAar) {
+            $env:SAMSUNG_HEALTH_DATA_SDK_AAR = $previousSamsungSdkAar
+        } else {
+            Remove-Item Env:SAMSUNG_HEALTH_DATA_SDK_AAR -ErrorAction SilentlyContinue
+        }
         if ($pointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
         $password = $null
     }

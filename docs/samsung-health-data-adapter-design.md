@@ -1,6 +1,6 @@
 # Samsung Health Data Adapter Design
 
-Status: revision 4, approved by Fable for non-proprietary implementation
+Status: revision 5, licensed reader implemented; real-device validation pending
 
 Date: 2026-09-26
 
@@ -51,6 +51,8 @@ There are two delivery gates:
 
 1. The v2 server contract, migrations, dashboard, fake adapter, fixtures, build isolation, and tests may ship without the proprietary SDK.
 2. The concrete Samsung reader may be compiled and device-tested only after the owner legitimately obtains the SDK. A Samsung-enabled public APK may ship only after the license and Samsung authorization permit it.
+
+The concrete reader lives in `app/src/samsungSdk` and is excluded from ordinary builds. Gradle adds that source set and the local AAR only when `SAMSUNG_HEALTH_DATA_SDK_AAR` or the `samsungHealthDataSdkAar` Gradle property points to a valid file. The AAR is ignored by Git and is never copied into source or release archives. The signed release helper exposes this as `-SamsungSdkAar`.
 
 ## Architecture
 
@@ -140,6 +142,8 @@ Rollback is operational, not lossy: stop v2 ingestion, stop the upgraded service
 ## Adapter ownership and source independence
 
 Health Connect remains the owner of existing portable metrics and direct Wear remains the owner of near-real-time heart rate. The first Samsung SDK release owns only new Samsung-specific or richer metrics. It does not duplicate Health Connect steps, generic heart rate, blood pressure, weight, nutrition, or exercise.
+
+`ActivitySummaryType` is the one provider exception to changed-data synchronization: Samsung exposes active time through a daily aggregate request rather than a change-readable record type. The companion therefore rereads the bounded 30-day active-time window on each run and relies on deterministic identities and idempotent server upserts. Its availability explicitly remains `backfill_limited`; it never claims a change checkpoint for this aggregate.
 
 Source records are never destructively merged. A delete removes only the row with the same adapter and source identity. A surviving equivalent record from another adapter remains.
 
@@ -346,6 +350,7 @@ The dashboard shows adapter, last phone read, last server upload, availability p
 - MCP tests proving all new metrics are denied by default and clinical findings never enter current state.
 - Manifest tests proving no health write, route, location, or microphone permission.
 - Release-content tests proving the Samsung AAR is absent from Git and public ZIPs.
+- A private-AAR verification script that runs Samsung-enabled unit tests, release lint, a minified release build, and APK class-retention inspection.
 - Device tests for permission denial, authorization failure, empty history, incremental sync, reboot, network loss, and backfill.
 - Visual tests at phone and desktop widths, including unavailable states and long labels.
 - End-to-end signed upload, CSV export, and protected public dashboard verification.

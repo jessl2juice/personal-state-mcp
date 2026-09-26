@@ -2,7 +2,7 @@
 
 ## Release model
 
-Personal State 0.2.0 ships as a versioned Windows ZIP. It contains an offline Python wheelhouse, signed Android APKs, Google Play app bundles, checksums, user-facing setup launchers, and the runtime scripts used by the scheduled tasks.
+Personal State 0.3.0 ships as a versioned Windows ZIP. It contains an offline Python wheelhouse, signed Android APKs, Google Play app bundles, checksums, user-facing setup launchers, and the runtime scripts used by the scheduled tasks.
 
 The release package must never contain a health database, history export, pairing file, credential, tunnel token, signing key, device screenshot, or machine-specific settings file.
 
@@ -48,7 +48,7 @@ Run:
 .\scripts\build_release.ps1
 ```
 
-The release build runs Python tests, builds all dependency wheels, runs Android unit tests and release lint, creates signed APK and AAB artifacts, computes SHA-256 checksums, and creates `release\Personal-State-0.2.0-Windows.zip`.
+The release build runs Python tests, builds all dependency wheels, runs Android unit tests and release lint, creates signed APK and AAB artifacts, computes SHA-256 checksums, and creates `release\Personal-State-0.3.0-Windows.zip`.
 
 Before publication:
 

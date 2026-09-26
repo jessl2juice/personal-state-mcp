@@ -42,7 +42,7 @@ private data class TypeSpec<T : Record>(
 )
 
 class HealthConnectSync(
-    context: Context,
+    private val context: Context,
     private val store: PairingStore = PairingStore(context),
     private val client: HealthConnectClient = HealthConnectClient.getOrCreate(context),
     private val uploader: UploadClient = UploadClient(),
@@ -86,15 +86,12 @@ class HealthConnectSync(
         }
         pairing.identityNamespaceId?.let { namespace ->
             try {
-                val unavailable = SamsungHealthDataUnavailableAdapter().collect()
-                uploader.upload(
-                    pairing,
-                    SamsungAvailabilityBatch(
-                        installationId = store.installationId(),
-                        identityNamespaceId = namespace,
-                        availability = unavailable.availability,
-                    ),
-                )
+                val samsung = SamsungHealthDataAdapterFactory.create(context, store).collect()
+                uploadSamsung(pairing, namespace, samsung)
+                samsung.checkpointUpdates.forEach { (key, value) ->
+                    store.setCheckpoint(key, value)
+                }
+                uploaded += samsung.sourceChanges.size
             } catch (error: Exception) {
                 val reason = error.message?.replace(Regex("\\s+"), " ")?.take(140) ?: "no message"
                 failed += "Samsung Health Data adapter status (${error::class.simpleName}: $reason)"
@@ -103,6 +100,58 @@ class HealthConnectSync(
         val result = "${Instant.now()} | $uploaded changes uploaded${if (failed.isNotEmpty()) "; retry: ${failed.joinToString()}" else ""}"
         store.setStatus(result)
         return result
+    }
+
+    private suspend fun uploadSamsung(
+        pairing: PairingConfig,
+        namespace: String,
+        result: SamsungAdapterResult,
+    ) {
+        val chunks = result.sourceChanges.chunked(SAMSUNG_CHANGES_PER_BATCH)
+        if (chunks.isEmpty()) {
+            val batch = SamsungAvailabilityBatch(
+                installationId = store.installationId(),
+                identityNamespaceId = namespace,
+                adapter = result.adapter,
+                sourceChanges = emptyList(),
+                availability = result.availability,
+            )
+            check(uploader.upload(pairing, batch)) { "Samsung Health Data status upload failed." }
+            return
+        }
+        chunks.forEachIndexed { index, changes ->
+            uploadSamsungChunk(
+                pairing,
+                namespace,
+                result.adapter,
+                changes,
+                if (index == 0) result.availability else emptyList(),
+            )
+        }
+    }
+
+    private suspend fun uploadSamsungChunk(
+        pairing: PairingConfig,
+        namespace: String,
+        adapter: JSONObject,
+        changes: List<JSONObject>,
+        availability: List<SamsungAdapterAvailability>,
+    ) {
+        val batch = SamsungAvailabilityBatch(
+            installationId = store.installationId(),
+            identityNamespaceId = namespace,
+            adapter = adapter,
+            sourceChanges = changes,
+            availability = availability,
+        )
+        if (batch.bytes().size > MAX_BATCH_BYTES && changes.size > 1) {
+            val middle = changes.size / 2
+            uploadSamsungChunk(pairing, namespace, adapter, changes.subList(0, middle), availability)
+            uploadSamsungChunk(pairing, namespace, adapter, changes.subList(middle, changes.size), emptyList())
+            return
+        }
+        check(batch.bytes().size <= MAX_BATCH_BYTES) { "A Samsung Health source record exceeds the server contract." }
+        check(uploader.upload(pairing, batch)) { "Samsung Health Data upload failed." }
     }
 
     private suspend fun syncType(spec: TypeSpec<out Record>, pairing: PairingConfig): Int {
@@ -497,6 +546,7 @@ class HealthConnectSync(
         const val SAMSUNG_HEALTH_PACKAGE = "com.sec.android.app.shealth"
         private const val MAX_BATCH_BYTES = 1024 * 1024
         private const val MAX_SERIES_SAMPLES = 2000
+        private const val SAMSUNG_CHANGES_PER_BATCH = 20
 
         val READ_PERMISSIONS: Set<String> = setOf(
             HealthPermission.getReadPermission(StepsRecord::class),

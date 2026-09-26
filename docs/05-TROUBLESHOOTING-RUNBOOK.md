@@ -30,7 +30,7 @@ The current watch release automatically restarts its own stalled heart stream af
 
 1. Compare the latest watch-screen sample time, phone relay time, server ingest time, and dashboard time.
 2. Determine where timestamps stop advancing: watch sensor, watch-to-phone, phone-to-server, or dashboard.
-3. Confirm phone and watch version 0.2.0 or later.
+3. Confirm phone and watch version 0.3.0 or later.
 4. Confirm phone and watch package signatures match.
 5. Confirm the watch foreground service is running and has heart-rate, notification, and background access.
 6. Confirm the phone received either Wear OS message or Data Item events.

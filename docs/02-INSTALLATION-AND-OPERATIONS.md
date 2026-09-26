@@ -8,8 +8,8 @@ Intended readers: trusted installers and operators
 
 - Windows host running the Python service, SQLite history, dashboard, collector, and Cloudflare Tunnel.
 - FreeStyle Libre 3 Plus shared to a dedicated LibreLinkUp follower account.
-- Android phone companion 0.2.0 or later.
-- Galaxy Watch companion 0.2.0 or later on a supported Wear OS watch.
+- Android phone companion 0.3.0 or later.
+- Galaxy Watch companion 0.3.0 or later on a supported Wear OS watch.
 - Private dashboard protected by Cloudflare Access.
 - Separate authenticated ingest hostname and policy for the phone companion.
 

@@ -44,3 +44,16 @@ After approval, the original user authorization permits implementation of the no
 ## Revision 4 approval
 
 Fable re-reviewed revision 4 and found no remaining P0, P1, or P2 design findings. The review approved the non-proprietary server, migration, dashboard, fake adapter, fixtures, tests, and build isolation. The concrete Samsung reader and Samsung-enabled public distribution remain gated on legitimate SDK access, licensing, device verification, and Samsung authorization.
+
+## Licensed reader implementation review
+
+Fable's first implementation review identified four P1 blockers. The reader was not committed while those findings were open.
+
+| Finding | Resolution |
+|---|---|
+| Incremental sync missed old edits and deletes | Replaced measurement-time reconciliation with paginated Samsung changed-data reads after initial backfill, a five-minute overlap, explicit UPSERT and DELETE source changes, fixed run bounds, and post-ack provider checkpoints. |
+| Sleep families omitted associated measurements | Added Samsung associated-data reads for blood oxygen and skin temperature and included those records in the parent sleep source change and exact replacement manifest. |
+| Series and sleep data were silently truncated | Removed `.take(...)` clipping. Enforced explicit series and 500-member family limits; failures report interrupted and truncated availability and leave checkpoints unchanged. |
+| Licensed minified reader lacked meaningful automation | Kept the full reflection-loaded class through R8, added fail-closed static invariants to public CI, and added a private-AAR verifier covering tests, release lint, minification, APK creation, and class retention. |
+
+Fable re-reviewed the unchanged implementation after 47 Python tests, a clean public Android build, and the private Samsung-AAR release verification passed. The implementation review found no remaining P0 or P1 blocker and returned **APPROVED**. Owner-device validation remains required, and Samsung-enabled public distribution remains subject to the applicable Samsung authorization and license.

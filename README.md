@@ -42,7 +42,7 @@ See [docs/design.md](docs/design.md) for the detailed design and source links. I
 
 For a normal Windows installation:
 
-1. Download and extract `Personal-State-0.2.0-Windows.zip`.
+1. Download and extract `Personal-State-0.3.0-Windows.zip`.
 2. Double-click `Install Personal State.cmd`.
 3. Enter the dedicated LibreLinkUp follower email and password when prompted.
 4. Open the new **Personal State** desktop shortcut.
@@ -116,7 +116,7 @@ The dashboard includes:
 - A guarded manual refresh that respects the minimum polling interval.
 - An Ask Codex composer that prepares a selective MCP request without embedding an API key or sending data directly from the page.
 - A Watch view for Health Connect read/upload times, heart-rate samples, daily steps, sleep sessions, Samsung category coverage, source attribution, recent records, and watch-specific CSV export.
-- Phone companion version 0.2.0 reads heart rate from every Health Connect origin, migrates obsolete origin-filtered cursors automatically, preserves each record's actual source and device attribution, and receives direct watch samples over both Wear OS message and urgent Data Item transports.
+- Phone companion version 0.3.0 reads heart rate from every Health Connect origin, migrates obsolete origin-filtered cursors automatically, preserves each record's actual source and device attribution, and receives direct watch samples over both Wear OS message and urgent Data Item transports.
 
 Dashboard user stories and acceptance criteria for the primary user, primary care, endocrinology, and cardiology are recorded in [`docs/dashboard-user-stories.md`](docs/dashboard-user-stories.md).
 
@@ -172,7 +172,13 @@ The Health Connect companion cannot trigger a Galaxy Watch-to-Samsung Health syn
 
 The non-proprietary server side is implemented behind schema `personal-state-watch-batch/v2`. It includes adapter-scoped identities and deletes, complete sleep-family reconciliation, per-adapter availability with a 26-hour freshness limit, source-aware dashboard labels, provenance-rich CSV export, a production-rejected synthetic adapter, and default-denied MCP policy for every new metric. The normative contract is [docs/watch-ingest-schema-v2.json](docs/watch-ingest-schema-v2.json).
 
-The real phone reader is intentionally not bundled yet. Shipping it requires the owner or distributor to obtain Samsung Health Data SDK 1.1.0 under Samsung's terms, register the Android package and signing certificate, receive the needed data-type authorization, and complete real-device validation. A missing SDK is reported as `adapter_not_installed`; it is never presented as absent or normal physiology.
+The real phone reader source is implemented, while Samsung's licensed AAR remains outside Git and release source archives. A public build without the AAR reports `adapter_not_installed`; it never presents an unavailable reader as absent or normal physiology. A Samsung-enabled development or owner build requires a legitimately obtained Samsung Health Data SDK 1.1.0 AAR:
+
+```powershell
+.\scripts\build_release.ps1 -SamsungSdkAar "C:\path\to\samsung-health-data-api-1.1.0.aar"
+```
+
+The build includes the reader only for that invocation, requires Android 10 or newer, and retains the established Personal State release-signing identity. Before signing, the private reader can be checked independently with `scripts\verify_samsung_sdk_build.ps1 -SamsungSdkAar "C:\path\to\samsung-health-data-api-1.1.0.aar"`; that check runs unit tests, release lint, a minified release build, and confirms that the reflected reader class remains in the APK. Public distribution still requires Samsung partner approval, approved data-type scope, package/signing-certificate registration, and real-device validation.
 
 ## Run MCP
 
