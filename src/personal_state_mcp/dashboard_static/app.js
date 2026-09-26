@@ -13,6 +13,9 @@
     loading: false,
     liveLoading: false,
     heartCutoffTimer: null,
+    detailMetric: null,
+    detailRange: "24h",
+    detailPayload: null,
   };
 
   const rangeLabels = {
@@ -24,7 +27,7 @@
 
   const rangeHours = { "24h": 24, "7d": 168, "30d": 720, "1y": 8760 };
   const rangeNames = { "24h": "Day", "7d": "Week", "30d": "Month", "1y": "Year" };
-  const HEART_LIVE_MAX_AGE_SECONDS = 60;
+  const HEART_LIVE_MAX_AGE_SECONDS = 2;
   const HEART_GRAPH_GAP_MS = 60 * 1000;
   const watchMetricLabels = {
     "activity.steps": "Steps",
@@ -239,7 +242,7 @@
       state.heartCutoffTimer = window.setTimeout(() => {
         heartCard.classList.add("is-unavailable");
         setStatusClass($("#heart-freshness-dot"), "error");
-        setText("#heart-freshness-label", "Not live · latest sample is over 1 minute old");
+        setText("#heart-freshness-label", "Failed · latest sample is over 2 seconds old");
         setText("#current-heart-value", "No live data");
         setText("#current-heart-unit", "");
         setText("#current-heart-time", `Historical only: ${heartPresentation.value} bpm recorded ${formatDate(heartSampleTime(heart))}`);
@@ -514,13 +517,13 @@
       const finding = ["cardiac.irregular_rhythm_notification", "sleep.apnea_detected_sign"].includes(metric);
       const eventLabel = observation.local_date || formatDate(observationTime(observation));
       return `
-        <article class="health-metric-card ${finding ? "vendor-finding-card" : ""}">
+        <button type="button" class="health-metric-card ${finding ? "vendor-finding-card" : ""}" data-metric="${escapeHtml(metric)}" aria-label="Open ${escapeHtml(label)} history and graph">
           <div class="metric-card-top"><span class="metric-icon"><svg><use href="#${metricIcons[metric] || "icon-activity"}"/></svg></span><span class="metric-age ${ageTone}">${escapeHtml(age)}</span></div>
           <span class="metric-label">${escapeHtml(label)}</span>
           <div class="metric-value"><strong>${escapeHtml(presentation.value)}</strong>${presentation.unit ? `<small>${escapeHtml(presentation.unit)}</small>` : ""}</div>
           <p class="metric-meta">${escapeHtml(adapterLabel(observation))}</p>
           <p class="metric-time">Recorded ${escapeHtml(eventLabel)}</p>
-        </article>
+        </button>
       `;
     };
 
@@ -736,7 +739,7 @@
     ctx.fillStyle = "#fff0ee";
     ctx.fillRect(margins.left, yScale(threshold), plotWidth, glucoseTop + glucoseHeight - yScale(threshold));
 
-    ctx.font = "11px Segoe UI, sans-serif";
+    ctx.font = "11px Roboto, Arial, sans-serif";
     ctx.fillStyle = "#64748b";
     ctx.strokeStyle = "#e3eaf4";
     ctx.lineWidth = 1;
@@ -786,14 +789,14 @@
     ctx.stroke();
     ctx.setLineDash([]);
 
-    ctx.font = "700 11px Segoe UI, sans-serif";
+    ctx.font = "700 11px Roboto, Arial, sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "bottom";
     ctx.fillStyle = "#07856f";
     ctx.fillText("GLUCOSE  mg/dL", margins.left, glucoseTop - 10);
     ctx.fillStyle = "#d43d64";
     ctx.fillText("HEART RATE  bpm", margins.left, heartTop - 10);
-    ctx.font = "10px Segoe UI, sans-serif";
+    ctx.font = "10px Roboto, Arial, sans-serif";
     ctx.textAlign = "right";
     ctx.fillStyle = "#b8453b";
     ctx.fillText(`${threshold} context threshold`, width - margins.right, thresholdY - 6);
@@ -846,7 +849,7 @@
       ctx.stroke();
     });
 
-    ctx.font = "12px Segoe UI, sans-serif";
+    ctx.font = "12px Roboto, Arial, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#8996aa";
@@ -870,6 +873,115 @@
     setText("#prompt-range", `${rangeLabels[state.range]} + current state`);
     $$("#range-control button").forEach((button) => button.classList.toggle("is-active", button.dataset.range === state.range));
     drawChart();
+  }
+
+  function drawMetricHistory() {
+    const canvas = $("#metric-history-chart");
+    const wrap = $("#metric-history-wrap");
+    const points = state.detailPayload?.points || [];
+    const empty = $("#metric-history-empty");
+    const rect = wrap.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    empty.hidden = points.length > 0;
+    if (!points.length) return;
+
+    const margin = { left: 52, right: 20, top: 22, bottom: 38 };
+    const width = Math.max(1, rect.width - margin.left - margin.right);
+    const height = Math.max(1, rect.height - margin.top - margin.bottom);
+    const times = points.map((point) => new Date(point.time).getTime()).filter(Number.isFinite);
+    const values = points.map((point) => Number(point.value)).filter(Number.isFinite);
+    if (!times.length || !values.length) return;
+    const minTime = Math.min(...times);
+    const maxTime = Math.max(...times);
+    const rawMin = Math.min(...values);
+    const rawMax = Math.max(...values);
+    const pad = Math.max((rawMax - rawMin) * .12, rawMax === rawMin ? Math.max(Math.abs(rawMax) * .05, 1) : 1);
+    const minValue = rawMin - pad;
+    const maxValue = rawMax + pad;
+    const x = (time) => margin.left + ((time - minTime) / Math.max(1, maxTime - minTime)) * width;
+    const y = (value) => margin.top + (1 - (value - minValue) / Math.max(1, maxValue - minValue)) * height;
+
+    ctx.strokeStyle = "#dfe3eb";
+    ctx.lineWidth = 1;
+    ctx.fillStyle = "#5f6368";
+    ctx.font = '11px "Google Sans", Roboto, Arial, sans-serif';
+    for (let index = 0; index <= 4; index += 1) {
+      const py = margin.top + (height * index / 4);
+      const value = maxValue - ((maxValue - minValue) * index / 4);
+      ctx.beginPath(); ctx.moveTo(margin.left, py); ctx.lineTo(margin.left + width, py); ctx.stroke();
+      ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText(readableNumber(value), margin.left - 8, py);
+    }
+    ctx.strokeStyle = "#0b57d0";
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    points.forEach((point, index) => {
+      const px = x(new Date(point.time).getTime());
+      const py = y(Number(point.value));
+      if (index === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    });
+    ctx.stroke();
+    ctx.fillStyle = "#5f6368";
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left"; ctx.fillText(formatDate(new Date(minTime).toISOString(), { year: "numeric" }), margin.left, margin.top + height + 12);
+    ctx.textAlign = "right"; ctx.fillText(formatDate(new Date(maxTime).toISOString(), { year: "numeric" }), margin.left + width, margin.top + height + 12);
+  }
+
+  function renderMetricHistory(payload) {
+    state.detailPayload = payload;
+    const observations = payload.observations || [];
+    const latestObservation = observations[0];
+    const latestPoint = (payload.points || []).at(-1);
+    const presentation = latestObservation ? watchMetricPresentation(payload.metric, latestObservation) : null;
+    setText("#metric-detail-value", presentation ? `${presentation.value}${presentation.unit ? ` ${presentation.unit}` : ""}` : latestPoint ? `${readableNumber(latestPoint.value)} ${latestPoint.unit || ""}`.trim() : "No recorded value");
+    setText("#metric-detail-age", latestObservation ? formatAge(latestObservation.observation_recency?.measurement_age_seconds) : "No observation");
+    setText("#metric-detail-source", latestObservation ? adapterLabel(latestObservation) : "No source");
+    setText("#metric-detail-status", `${(payload.points || []).length.toLocaleString()} plotted samples · ${observations.length.toLocaleString()} recent records`);
+    $("#metric-history-body").innerHTML = observations.length ? observations.map((observation) => {
+      const value = watchMetricPresentation(payload.metric, observation);
+      return `<tr><td>${escapeHtml(formatDate(observationTime(observation), { year: "numeric", second: "2-digit" }))}</td><td>${escapeHtml(`${value.value}${value.unit ? ` ${value.unit}` : ""}`)}</td><td>${escapeHtml(adapterLabel(observation))}</td><td>${escapeHtml(formatAge(observation.observation_recency?.measurement_age_seconds))}</td></tr>`;
+    }).join("") : '<tr><td colspan="4">No records in this period.</td></tr>';
+    $$("#metric-range-control button").forEach((button) => button.classList.toggle("is-active", button.dataset.range === state.detailRange));
+    window.requestAnimationFrame(drawMetricHistory);
+  }
+
+  async function loadMetricHistory() {
+    if (!state.detailMetric) return;
+    setText("#metric-detail-status", "Loading recorded history...");
+    try {
+      const response = await fetch(`/api/watch/history?metric=${encodeURIComponent(state.detailMetric)}&range=${encodeURIComponent(state.detailRange)}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Metric history request failed");
+      renderMetricHistory(await response.json());
+    } catch (error) {
+      setText("#metric-detail-status", "History could not be loaded.");
+      $("#metric-history-empty").hidden = false;
+    }
+  }
+
+  function openMetricHistory(metric) {
+    state.detailMetric = metric;
+    state.detailRange = state.range;
+    state.detailPayload = null;
+    setText("#metric-detail-title", watchMetricLabels[metric] || metric);
+    setText("#metric-detail-value", "--");
+    setText("#metric-detail-age", "--");
+    setText("#metric-detail-source", "--");
+    $("#metric-history-body").innerHTML = '<tr><td colspan="4">Loading history...</td></tr>';
+    const dialog = $("#metric-dialog");
+    if (!dialog.open) dialog.showModal();
+    loadMetricHistory();
+  }
+
+  function focusTimeline() {
+    const panel = $("#timeline-panel");
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => panel.focus({ preventScroll: true }), 350);
   }
 
   async function loadDashboard({ quiet = false } = {}) {
@@ -1033,12 +1145,27 @@
   $("#copy-prompt-button").addEventListener("click", copyForCodex);
   $("#glucose-chart").addEventListener("mousemove", handleChartMove);
   $("#glucose-chart").addEventListener("mouseleave", () => { $("#chart-tooltip").hidden = true; });
+  $("#watch-latest-grid").addEventListener("click", (event) => {
+    const card = event.target.closest("[data-metric]");
+    if (card) openMetricHistory(card.dataset.metric);
+  });
+  $$("[data-timeline-focus]").forEach((card) => {
+    card.addEventListener("click", focusTimeline);
+    card.addEventListener("keydown", (event) => {
+      if (["Enter", " "].includes(event.key)) { event.preventDefault(); focusTimeline(); }
+    });
+  });
+  $$("#metric-range-control button").forEach((button) => button.addEventListener("click", () => {
+    state.detailRange = button.dataset.range;
+    loadMetricHistory();
+  }));
+  $("#metric-dialog-close").addEventListener("click", () => $("#metric-dialog").close());
 
   const resizeObserver = new ResizeObserver(() => window.requestAnimationFrame(drawChart));
   resizeObserver.observe($("#chart-wrap"));
   window.setInterval(() => {
     if (document.visibilityState === "visible") loadLive({ quiet: true });
-  }, 2_000);
+  }, 1_000);
   window.setInterval(() => {
     if (document.visibilityState === "visible") loadDashboard({ quiet: true });
   }, 60_000);

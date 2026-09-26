@@ -74,7 +74,7 @@
           </div>
         </div>
         <div class="current-band">
-          <div class="current-reading current-glucose">
+          <div class="current-reading current-glucose" role="button" tabindex="0" data-timeline-focus aria-label="Open glucose history timeline">
             <div class="vital-topline"><div class="vital-icon"><svg><use href="#icon-droplet"/></svg></div><div><div class="vital-name">Glucose</div><div class="reading-label"><span id="freshness-dot" class="status-dot"></span><span id="freshness-label">Loading</span></div></div></div>
             <div class="reading-value"><span id="current-value">--</span><span class="unit">mg/dL</span></div>
             <p id="current-time">No reading loaded</p>
@@ -85,7 +85,7 @@
               <span id="context-copy" class="sr-only">The official Libre app and sensor remain the safety alert layer.</span>
             </div>
           </div>
-          <div id="current-heart-card" class="current-reading current-heart">
+          <div id="current-heart-card" class="current-reading current-heart" role="button" tabindex="0" data-timeline-focus aria-label="Open heart-rate history timeline">
             <div class="vital-topline"><div class="vital-icon"><svg><use href="#icon-heart"/></svg></div><div><div class="vital-name">Heart rate</div><div class="reading-label"><span id="heart-freshness-dot" class="status-dot"></span><span id="heart-freshness-label">Waiting for data</span></div></div></div>
             <div class="reading-value"><span id="current-heart-value">--</span><span id="current-heart-unit" class="unit">bpm</span></div>
             <p id="current-heart-time">No heart-rate sample loaded</p>
@@ -128,7 +128,7 @@
         </div>
 
         <div class="overview-grid">
-          <article class="panel chart-panel">
+          <article id="timeline-panel" class="panel chart-panel" tabindex="-1">
             <div class="panel-header">
               <div>
                 <p class="section-kicker">Synchronized history</p>
@@ -327,6 +327,39 @@
       <button id="copy-prompt-button" value="default" type="button" class="command-button full-width"><svg><use href="#icon-copy"/></svg><span>Copy question for Codex</span></button>
       <p id="copy-status" class="copy-status" role="status"></p>
     </form>
+  </dialog>
+
+  <dialog id="metric-dialog" class="metric-dialog">
+    <div class="metric-dialog-shell">
+      <div class="dialog-header metric-dialog-header">
+        <div><p class="section-kicker">Recorded history</p><h2 id="metric-detail-title">Health signal</h2></div>
+        <button id="metric-dialog-close" type="button" class="icon-button close-button" aria-label="Close"><svg><use href="#icon-x"/></svg></button>
+      </div>
+      <div class="metric-detail-summary">
+        <div><span>Latest recorded</span><strong id="metric-detail-value">--</strong></div>
+        <div><span>Measurement age</span><strong id="metric-detail-age">--</strong></div>
+        <div><span>Source</span><strong id="metric-detail-source">--</strong></div>
+      </div>
+      <div class="metric-detail-toolbar">
+        <div id="metric-range-control" class="segmented-control" aria-label="Metric history range">
+          <button type="button" data-range="24h" class="is-active">Day</button>
+          <button type="button" data-range="7d">Week</button>
+          <button type="button" data-range="30d">Month</button>
+          <button type="button" data-range="1y">Year</button>
+        </div>
+        <span id="metric-detail-status" class="range-caption" role="status">Loading history</span>
+      </div>
+      <div id="metric-history-wrap" class="metric-history-wrap">
+        <canvas id="metric-history-chart" role="img" aria-label="Selected health signal history graph"></canvas>
+        <div id="metric-history-empty" class="empty-state" hidden>No numeric samples were recorded in this period.</div>
+      </div>
+      <div class="table-shell metric-history-table-shell">
+        <table>
+          <thead><tr><th>Recorded</th><th>Value</th><th>Source</th><th>Age now</th></tr></thead>
+          <tbody id="metric-history-body"></tbody>
+        </table>
+      </div>
+    </div>
   </dialog>
 
   <script src="/static/app.js"></script>

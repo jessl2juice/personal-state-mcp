@@ -11,8 +11,8 @@ android {
         applicationId = "ai.clinicianassist.personalstate"
         minSdk = 30
         targetSdk = 36
-        versionCode = 30001
-        versionName = "0.3.0"
+        versionCode = 40001
+        versionName = "0.4.0"
     }
 
     val releaseKeystore = System.getenv("PERSONAL_STATE_ANDROID_KEYSTORE")

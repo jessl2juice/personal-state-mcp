@@ -38,7 +38,7 @@ Only fresh or recent glucose can produce below, near, or above threshold context
 
 ### Heart rate
 
-The live heart-rate position shows a number only when the newest measurement is no more than 60 seconds old. At 61 seconds it changes to `No live data`. An older reading may still appear in history, but it must be labeled as historical and must never occupy the live-vital position.
+The live heart-rate position shows a number only when the newest direct watch measurement is no more than two seconds old. At three seconds it changes to `No live data`. An older reading remains available in history but never occupies the live-vital position.
 
 This rule prevents a technically valid but old value from looking current.
 

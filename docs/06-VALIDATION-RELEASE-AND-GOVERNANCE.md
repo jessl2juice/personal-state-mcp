@@ -37,7 +37,7 @@ The detailed findings and resolutions remain in the engineering review documents
 
 ## Current release contents
 
-### Server 0.3.0
+### Server 0.4.0
 
 - Libre-compatible follower collection.
 - SQLite long-term history.
@@ -46,7 +46,7 @@ The detailed findings and resolutions remain in the engineering review documents
 - Signed watch ingest and Health Connect storage.
 - Host allowlisting, rate limiting, audit records, and safety envelopes.
 
-### Phone companion 0.3.0
+### Phone companion 0.4.0
 
 - Android Health Connect read-only collection.
 - Encrypted pairing storage.
@@ -54,7 +54,7 @@ The detailed findings and resolutions remain in the engineering review documents
 - Wear OS message and Data Item reception.
 - Timestamp deduplication of direct heart-rate transport.
 
-### Watch companion 0.3.0
+### Watch companion 0.4.0
 
 - Foreground continuous heart-rate collection through Health Services.
 - Five-second screen-off batching, no GPS.
@@ -110,7 +110,7 @@ Tests use synthetic data. Instrumented connected-device tests must not run again
 - Desktop and mobile layouts do not overlap or overflow.
 - Day is the default; Week, Month, and Year remain selectable.
 - Glucose and heart rate remain visually distinct and share a truthful time axis.
-- Live heart rate disappears at 61 seconds.
+- Live heart rate disappears at three seconds.
 - Historical values are explicitly labeled.
 - Heart-rate display smoothing leaves raw data unchanged.
 - Gaps through one minute connect; longer gaps break.
@@ -123,7 +123,7 @@ Tests use synthetic data. Instrumented connected-device tests must not run again
 - Watch sample times advance repeatedly.
 - Phone relay times advance repeatedly.
 - Server ingest times advance repeatedly.
-- Dashboard age remains within 60 seconds for at least five minutes.
+- Dashboard age remains within two seconds for at least five minutes.
 - The same verification passes after USB and debugger disconnection.
 - Screen-off and ordinary movement do not permanently stop the stream.
 - A forced or naturally occurring 45-second stream stall recovers without reinstalling the application.

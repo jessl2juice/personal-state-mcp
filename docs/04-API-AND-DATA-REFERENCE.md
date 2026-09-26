@@ -249,8 +249,8 @@ Default service policy:
 
 ### Live dashboard heart rate
 
-- numeric live value through 60 seconds.
-- no numeric live value after 60 seconds.
+- numeric live value through two seconds.
+- no numeric live value after two seconds.
 - older values may remain in history with explicit historical labeling.
 
 ### Other watch observations

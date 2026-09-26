@@ -38,6 +38,7 @@ android/**/local.properties
 # Private device screenshots captured during development
 /*.png
 /work-installed-watch.apk
+/work/
 
 # Generated installer output
 /release/

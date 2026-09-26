@@ -13,7 +13,7 @@ As the person whose data is shown, I need to identify glucose and heart rate imm
 ### Acceptance criteria
 
 - Current glucose and heart rate are separate, equally prominent values with units, measurement time, upload or receipt time, and age state.
-- The live heart-rate card shows a numeric value only when the sample is no more than 60 seconds old. At 61 seconds it switches to `No live data`; any last known value is labeled `Historical only`.
+- The live heart-rate card shows a numeric value only when the direct watch sample is no more than two seconds old. At three seconds it switches to `No live data`; the last known value remains in history.
 - The shared timeline uses separate labeled lanes and scales for glucose and heart rate.
 - Glucose and heart rate retain consistent, high-contrast colors everywhere.
 - The selected range and the coverage window for each stream are visible.
@@ -63,7 +63,7 @@ As a cardiologist, I need heart-rate history, count, range, average, capture dat
 - The heart-rate source attribution and exact timestamps remain available in the detailed watch table.
 - The display never compresses non-overlapping dates into apparent alignment.
 - Current heart-rate transfer failures are visually prominent and include the timestamp of the newest successfully transferred sample.
-- A heart-rate sample older than 60 seconds is never presented in the current-vital position.
+- A heart-rate sample older than two seconds is never presented in the current-vital position.
 
 ## Shared clinical handoff
 
@@ -84,4 +84,4 @@ As any reader receiving this dashboard, I need to distinguish observation from i
 - `index.html` presents current paired vitals, day/week/month/year controls, data coverage, sensor sync status, clinical facts, and print control.
 - `app.js` renders the facts and synchronized two-lane timeline without causal claims.
 - `app.css` provides stable desktop, mobile, and print layouts with consistent stream colors.
-- Automated tests cover full-sample heart-rate statistics, year-window support, overlap calculations, stale heart-rate transfer failure detection, and the 60-second live-heart cutoff.
+- Automated tests cover full-sample heart-rate statistics, year-window support, overlap calculations, stale heart-rate transfer failure detection, and the two-second live-heart cutoff.

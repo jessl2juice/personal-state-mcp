@@ -2,7 +2,7 @@
 
 ## Release model
 
-Personal State 0.3.0 ships as a versioned Windows ZIP. It contains an offline Python wheelhouse, signed Android APKs, Google Play app bundles, checksums, user-facing setup launchers, and the runtime scripts used by the scheduled tasks.
+Personal State 0.4.0 ships as a versioned Windows ZIP. It contains an offline Python wheelhouse, signed Android APKs, Google Play app bundles, checksums, user-facing setup launchers, and the runtime scripts used by the scheduled tasks.
 
 The release package must never contain a health database, history export, pairing file, credential, tunnel token, signing key, device screenshot, or machine-specific settings file.
 
@@ -31,6 +31,7 @@ The phone and Wear OS apps have:
 - different version codes across form factors;
 - a non-standalone Wear OS declaration because the watch relay depends on the phone app;
 - one guided Windows setup that installs both APKs in sequence.
+- a first-run phone flow that requests full-history and background access, then imports all records exposed by Health Connect and Samsung Health after explicit user approval.
 
 For Google Play, upload the phone and watch bundles to the same app listing and enable the Wear OS form factor. Google Play distributes the appropriate build to each device. Android and Wear OS still require user confirmation; silent watch installation from the phone APK is neither supported nor appropriate.
 
@@ -48,7 +49,7 @@ Run:
 .\scripts\build_release.ps1
 ```
 
-The release build runs Python tests, builds all dependency wheels, runs Android unit tests and release lint, creates signed APK and AAB artifacts, computes SHA-256 checksums, and creates `release\Personal-State-0.3.0-Windows.zip`.
+The release build runs Python tests, builds all dependency wheels, runs Android unit tests and release lint, creates signed APK and AAB artifacts, computes SHA-256 checksums, and creates `release\Personal-State-0.4.0-Windows.zip`.
 
 Before publication:
 
@@ -59,6 +60,6 @@ Before publication:
 5. verify password storage and a Libre collection;
 6. install both Android companions with the combined setup;
 7. verify the APK signatures match;
-8. verify live heart rate is withheld after 60 seconds without a fresh sample;
+8. verify live heart rate is withheld after two seconds without a fresh sample;
 9. uninstall and confirm history is retained;
 10. repeat with destructive removal in a disposable profile.

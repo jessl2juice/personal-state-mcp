@@ -57,7 +57,7 @@ RANGES: dict[str, float | None] = {
 }
 MAX_SOURCE_READINGS = 200_000
 MAX_CHART_POINTS = 1_200
-HEART_LIVE_MAX_AGE_SECONDS = 60
+HEART_LIVE_MAX_AGE_SECONDS = 2
 WATCH_INGEST_REQUESTS_PER_MINUTE = 40
 AVAILABILITY_TTL = timedelta(hours=26)
 AVAILABILITY_PRECEDENCE = (
@@ -275,7 +275,7 @@ def _heart_sync_status(
             "status": "current",
             "last_sample_at": iso_utc(last_sample),
             "sample_age_seconds": age_seconds,
-            "message": "Heart-rate data is live (measured within the past minute).",
+            "message": "Heart-rate data is live (measured within the past two seconds).",
         }
     recent_upload = last_upload_at is not None and (now - last_upload_at) <= timedelta(hours=24)
     return {
@@ -484,6 +484,47 @@ class DashboardApp:
             "retention_days": self.config.watch_retention_days,
             "authoritative_source": "Samsung Health and Samsung Health Monitor remain authoritative for device features and official notices.",
             "sync_limit": "The dashboard knows companion read and upload times; Samsung/watch synchronization status remains unknown.",
+        }
+
+    def watch_metric_history(self, metric: str, range_key: str) -> dict[str, Any]:
+        allowed_metrics = set(OBSERVATION_METRICS) | SAMSUNG_OBSERVATION_METRICS
+        if metric not in allowed_metrics:
+            raise ValueError("unsupported_watch_metric")
+        if range_key not in RANGES:
+            range_key = "24h"
+        now = utc_now()
+        since = _range_since(range_key, now)
+        records = self.store.watch_observations(metric=metric, since=since, limit=5000)
+        records.reverse()
+        points: list[dict[str, Any]] = []
+        for record in records:
+            samples = record.payload.get("samples")
+            if isinstance(samples, list):
+                for sample in samples:
+                    if not isinstance(sample, dict) or not isinstance(sample.get("value"), (int, float)):
+                        continue
+                    sample_time = _parse_dt(sample.get("time"))
+                    if sample_time is not None:
+                        points.append({"time": iso_utc(sample_time), "value": sample["value"], "unit": sample.get("unit", "")})
+                continue
+            event_at = record.measured_at or record.end_at or record.start_at
+            value = record.payload.get("value")
+            unit = record.payload.get("unit", "")
+            if not isinstance(value, (int, float)) and metric in {"sleep.session", "sleep.samsung_session", "sleep.summary"}:
+                if record.start_at is not None and record.end_at is not None:
+                    value = (record.end_at - record.start_at).total_seconds() / 3600
+                    unit = "hours"
+            if event_at is not None and isinstance(value, (int, float)):
+                points.append({"time": iso_utc(event_at), "value": value, "unit": unit})
+        return {
+            "metric": metric,
+            "generated_at": iso_utc(now),
+            "range": {"key": range_key, "window_start": iso_utc(since) if since else None, "window_end": iso_utc(now)},
+            "points": _downsample_numeric_points(points),
+            "observations": [
+                {**record.public_dict(), "observation_recency": observation_recency(record, now)}
+                for record in reversed(records[-200:])
+            ],
         }
 
     def ingest_watch(self, body: bytes, headers: dict[str, str]) -> tuple[int, dict[str, Any]]:
@@ -913,13 +954,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 payload = self.server.app.companion_apk.read_bytes()
                 self.send_response(HTTPStatus.OK)
                 self._security_headers("application/vnd.android.package-archive", len(payload))
-                self.send_header("Content-Disposition", 'attachment; filename="personal-state-companion-0.3.0.apk"')
+                self.send_header("Content-Disposition", 'attachment; filename="personal-state-companion-0.4.0.apk"')
                 self.end_headers()
                 self.wfile.write(payload)
             elif parsed.path == "/api/dashboard":
                 self._send_json(HTTPStatus.OK, self.server.app.dashboard(self._range_key(query)))
             elif parsed.path == "/api/live":
                 self._send_json(HTTPStatus.OK, self.server.app.live_state())
+            elif parsed.path == "/api/watch/history":
+                metric = query.get("metric", [""])[0]
+                try:
+                    self._send_json(HTTPStatus.OK, self.server.app.watch_metric_history(metric, self._range_key(query)))
+                except ValueError:
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"error": "unsupported_watch_metric"})
             elif parsed.path == "/api/export.csv":
                 range_key = self._range_key(query)
                 payload = self.server.app.csv_export(range_key)
