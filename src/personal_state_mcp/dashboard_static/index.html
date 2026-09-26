@@ -78,24 +78,18 @@
             <div class="vital-topline"><div class="vital-icon"><svg><use href="#icon-droplet"/></svg></div><div><div class="vital-name">Glucose</div><div class="reading-label"><span id="freshness-dot" class="status-dot"></span><span id="freshness-label">Loading</span></div></div></div>
             <div class="reading-value"><span id="current-value">--</span><span class="unit">mg/dL</span></div>
             <p id="current-time">No reading loaded</p>
+            <div class="threshold-note" aria-live="polite">
+              <span id="threshold-chip">80 mg/dL context</span>
+              <span id="context-title">Waiting for current state</span>
+              <span id="data-age">Age unavailable</span>
+              <span id="context-copy" class="sr-only">The official Libre app and sensor remain the safety alert layer.</span>
+            </div>
           </div>
           <div id="current-heart-card" class="current-reading current-heart">
             <div class="vital-topline"><div class="vital-icon"><svg><use href="#icon-heart"/></svg></div><div><div class="vital-name">Heart rate</div><div class="reading-label"><span id="heart-freshness-dot" class="status-dot"></span><span id="heart-freshness-label">Waiting for data</span></div></div></div>
             <div class="reading-value"><span id="current-heart-value">--</span><span id="current-heart-unit" class="unit">bpm</span></div>
             <p id="current-heart-time">No heart-rate sample loaded</p>
             <a id="heart-repair-action" class="heart-repair-action" href="/downloads/personal-state-companion.apk" download hidden><svg><use href="#icon-download"/></svg>Install sync update</a>
-          </div>
-          <div class="current-context">
-            <div class="context-head">
-              <span class="context-kicker">Personal context</span>
-              <span id="threshold-chip" class="state-chip">Threshold 80</span>
-            </div>
-            <h3 id="context-title">Waiting for current state</h3>
-            <p id="context-copy">The official Libre app and sensor remain the safety alert layer.</p>
-            <div class="context-meta">
-              <span><svg><use href="#icon-clock"/></svg><span id="data-age">Age unavailable</span></span>
-              <span><svg><use href="#icon-shield"/></svg>Informational only</span>
-            </div>
           </div>
         </div>
 

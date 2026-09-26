@@ -45,7 +45,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-lineca
 .consolidated-section { margin-top: 56px; padding-top: 38px; border-top: 1px solid var(--line); }
 
 .topbar { display: flex; min-height: 88px; align-items: center; justify-content: space-between; gap: 24px; margin-inline: calc(50% - 50vw); margin-bottom: 34px; padding: 15px max(34px, calc((100vw - 1432px) / 2)); background: var(--brand); color: white; box-shadow: 0 7px 24px rgba(31, 95, 211, 0.2); }
-.title-group, .toolbar, .status-line, .reading-label, .context-meta span, .privacy-badge, .heart-repair-action { display: flex; align-items: center; }
+.title-group, .toolbar, .status-line, .reading-label, .privacy-badge, .heart-repair-action { display: flex; align-items: center; }
 .title-group { min-width: 0; gap: 13px; }
 .brand-mark { display: grid; width: 46px; height: 46px; flex: 0 0 46px; place-items: center; border: 1px solid rgba(255,255,255,.42); border-radius: 8px; background: white; color: var(--brand); }
 .brand-mark svg { width: 25px; height: 25px; stroke-width: 2.2; }
@@ -82,8 +82,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-lineca
 .state-chip.near { border-color: #e9c774; background: var(--gold-soft); color: #805200; }
 .state-chip.above, .state-chip.ok { border-color: #89d6c3; background: var(--glucose-soft); color: #056b59; }
 
-.current-band { display: grid; grid-template-columns: minmax(245px,.82fr) minmax(245px,.82fr) minmax(360px,1.36fr); gap: 13px; }
-.current-reading, .current-context { min-width: 0; min-height: 205px; border: 1px solid var(--line); border-radius: 8px; background: white; box-shadow: var(--shadow); }
+.current-band { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 13px; }
+.current-reading { min-width: 0; min-height: 205px; border: 1px solid var(--line); border-radius: 8px; background: white; box-shadow: var(--shadow); }
 .current-reading { position: relative; overflow: hidden; padding: 22px 23px 19px; }
 .current-reading::after { position: absolute; right: -28px; bottom: -40px; width: 130px; height: 130px; border: 24px solid currentColor; border-radius: 50%; opacity: .055; content: ""; }
 .current-glucose { border-top: 5px solid var(--glucose); color: var(--glucose); }
@@ -100,18 +100,14 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-lineca
 .current-reading > p { position: relative; z-index: 1; margin: 13px 0 0; color: var(--muted); font-size: 10px; line-height: 1.4; }
 .heart-repair-action { position: relative; z-index: 1; gap: 6px; margin-top: 9px; color: var(--brand-dark); font-size: 11px; font-weight: 800; text-decoration: none; }
 .heart-repair-action svg { width: 15px; height: 15px; }
-.current-context { display: flex; flex-direction: column; justify-content: center; padding: 24px 26px; background: var(--ink); color: white; box-shadow: 0 12px 30px rgba(17,24,39,.18); }
-.context-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.context-kicker { color: #8eb8ff; font-size: 10px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
-.current-context .state-chip { border-color: rgba(255,255,255,.25); background: rgba(255,255,255,.09); color: white; }
-.current-context .state-chip.below { border-color: #fa9b91; color: #ffd2ce; }
-.current-context .state-chip.near { border-color: #edc96f; color: #ffe8ab; }
-.current-context .state-chip.above { border-color: #6cd5bb; color: #b9f5e6; }
-.current-context h3 { margin: 17px 0 7px; font-size: 20px; line-height: 1.23; }
-.current-context > p { max-width: 62ch; margin: 0; color: #b9c3d3; font-size: 12px; line-height: 1.55; }
-.context-meta { flex-wrap: wrap; gap: 17px; margin-top: 18px; color: #9eaabd; font-size: 10px; font-weight: 700; }
-.context-meta span { gap: 6px; }
-.context-meta svg { width: 14px; height: 14px; color: #7facff; }
+.threshold-note { display: flex; position: relative; z-index: 1; flex-wrap: wrap; align-items: center; gap: 5px 8px; margin-top: 9px; color: var(--faint); font-size: 9px; line-height: 1.25; }
+.threshold-note span { white-space: nowrap; }
+.threshold-note span + span::before { margin-right: 8px; color: var(--line-strong); content: "·"; }
+#threshold-chip { color: var(--muted); font-weight: 750; }
+#threshold-chip.below { color: var(--coral); }
+#threshold-chip.near { color: var(--gold); }
+#threshold-chip.above { color: var(--glucose); }
+#context-title { overflow: hidden; max-width: 38ch; text-overflow: ellipsis; }
 
 .signal-board { margin-top: 27px; }
 .signal-board-heading { margin-bottom: 13px; }
@@ -304,7 +300,6 @@ tbody tr:hover { background: #f6f9ff; }
   .workspace { padding-inline: 24px; }
   .topbar { padding-inline: 24px; }
   .current-band { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .current-context { grid-column: 1 / -1; min-height: 170px; }
   .signal-group { grid-column: span 12; }
   .overview-grid { grid-template-columns: 1fr; }
   .system-grid { grid-template-columns: 1fr; }
@@ -324,8 +319,7 @@ tbody tr:hover { background: #f6f9ff; }
   .snapshot-status { width: 100%; justify-content: space-between; }
   .snapshot-status > span:last-child { max-width: 55%; text-align: right; }
   .current-band { grid-template-columns: 1fr; }
-  .current-reading, .current-context { min-height: 175px; }
-  .current-context { grid-column: auto; }
+  .current-reading { min-height: 175px; }
   .reading-value > span:first-child { font-size: 46px; }
   .health-metric-grid { grid-template-columns: 1fr; }
   .signal-group { grid-column: 1; }
@@ -376,8 +370,8 @@ tbody tr:hover { background: #f6f9ff; }
   .topbar { min-height: 48px; margin: 0 0 10px; padding: 8px 10px; box-shadow: none; }
   .toolbar, .app-message, .range-row, #watch, #history, #readings, #system, .ask-dialog, .signal-board, .trends-heading { display: none !important; }
   .snapshot-heading { margin-bottom: 8px; }
-  .current-band { grid-template-columns: .7fr .7fr 1.3fr; gap: 7px; }
-  .current-reading, .current-context { min-height: 128px; padding: 13px; box-shadow: none; }
+  .current-band { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
+  .current-reading { min-height: 128px; padding: 13px; box-shadow: none; }
   .reading-value > span:first-child { font-size: 35px; }
   .metric-grid { gap: 7px; margin: 8px 0; }
   .metric-card { min-height: 68px; padding: 9px 11px; box-shadow: none; }
@@ -385,5 +379,5 @@ tbody tr:hover { background: #f6f9ff; }
   .overview-grid { grid-template-columns: 1.35fr .65fr; gap: 7px; }
   .chart-panel { grid-column: 1 / -1; break-inside: avoid; }
   .chart-wrap { height: 340px; }
-  .panel, .current-reading, .current-context { box-shadow: none; }
+  .panel, .current-reading { box-shadow: none; }
 }

@@ -203,3 +203,5 @@ def test_dashboard_places_all_current_signals_before_history_charts() -> None:
     assert html.count('id="glucose-chart"') == 1
     assert html.index('id="watch-latest-grid"') < html.index('id="glucose-chart"')
     assert 'id="signal-count"' in html
+    assert 'class="current-context"' not in html
+    assert 'class="threshold-note"' in html
