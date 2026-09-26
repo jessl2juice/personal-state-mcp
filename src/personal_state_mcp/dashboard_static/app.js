@@ -184,15 +184,15 @@
     setText("#data-age", formatAge(freshness.measurement_age_seconds));
 
     const chip = $("#threshold-chip");
-    chip.className = `state-chip ${threshold.state || ""}`;
-    chip.textContent = `Threshold ${threshold.threshold_mg_dl} mg/dL`;
+    chip.className = threshold.state || "";
+    chip.textContent = `${threshold.threshold_mg_dl} mg/dL context`;
 
     const titles = {
-      below: "Below the configured context threshold",
-      near: "Near the configured context threshold",
-      above: "Above the configured context threshold",
-      unknown_stale: "Threshold context is unavailable while data is stale",
-      unavailable: "No current glucose context is available",
+      below: "Below threshold",
+      near: "Near threshold",
+      above: "Above threshold",
+      unknown_stale: "Not evaluated while stale",
+      unavailable: "Context unavailable",
     };
     setText("#context-title", titles[threshold.state] || "Current context unavailable");
     setText("#context-copy", threshold.message || "The official Libre app and sensor remain the safety alert layer.");
