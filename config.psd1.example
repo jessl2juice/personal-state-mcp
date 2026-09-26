@@ -1,0 +1,19 @@
+@{
+    # Secrets do not belong in this file. The installer stores them in the OS keychain.
+    LibreEmail = "dedicated-follower@example.invalid"
+
+    HostId = "personal-state-local"
+    AllowedHosts = @("personal-state-local")
+    SourceTimezone = "America/Los_Angeles"
+    GlucoseThresholdMgDl = 80
+
+    DashboardAllowedHosts = @()
+    CompanionApkPath = ""
+
+    WatchEnabled = $false
+    WatchIngestHosts = @()
+    WatchDeviceId = ""
+
+    CloudflareTunnelEnabled = $false
+    DashboardHealthHost = "localhost"
+}

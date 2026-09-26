@@ -1,0 +1,46 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+wheelhouse/
+*.db
+*.sqlite
+*.sqlite3
+*.jsonl
+*.csv
+
+# Credentials and machine-specific configuration
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.jks
+*.keystore
+*pairing*.json
+settings.psd1
+local.properties
+
+# Android build products and local tool state
+android/**/.gradle/
+android/**/.kotlin/
+android/**/build/
+android/**/local.properties
+*.apk
+*.aab
+
+# Private device screenshots captured during development
+/*.png
+/work-installed-watch.apk
+
+# Generated installer output
+/release/
+
+# Generated document exports
+*.docx
+*.pdf

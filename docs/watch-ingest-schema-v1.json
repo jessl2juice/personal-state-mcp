@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/personal-state-watch-batch-v1.json",
+  "title": "Personal State Watch Batch v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "batch_id", "installation_id", "generated_at", "changes", "availability"],
+  "properties": {
+    "schema_version": {"const": "personal-state-watch-batch/v1"},
+    "batch_id": {"type": "string", "format": "uuid"},
+    "installation_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{16,128}$"},
+    "generated_at": {"type": "string", "format": "date-time", "maxLength": 64},
+    "changes": {"type": "array", "maxItems": 500, "items": {"$ref": "#/$defs/change"}},
+    "availability": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/availability"}}
+  },
+  "$defs": {
+    "metric": {
+      "enum": [
+        "activity.steps", "activity.exercise_calories", "activity.distance", "activity.exercise_session",
+        "activity.exercise_power", "activity.speed", "activity.vo2_max", "vitals.heart_rate",
+        "vitals.oxygen_saturation", "vitals.blood_pressure", "vitals.blood_glucose", "sleep.session",
+        "body.weight", "body.body_fat", "body.basal_metabolic_rate", "body.height", "nutrition.intake",
+        "vitals.resting_heart_rate", "vitals.heart_rate_variability", "vitals.skin_temperature",
+        "wellness.stress", "activity.floors", "activity.active_time"
+      ]
+    },
+    "attribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "evidence"],
+      "properties": {
+        "state": {"enum": ["watch_confirmed", "samsung_health_unattributed", "phone", "manual", "external_device", "unknown"]},
+        "evidence": {"type": "string", "maxLength": 512},
+        "device_type": {"type": ["string", "null"], "maxLength": 128},
+        "device_model": {"type": ["string", "null"], "maxLength": 128}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["window_start", "window_end", "truncated", "backfill_limited", "interrupted", "reconciling"],
+      "properties": {
+        "window_start": {"type": ["string", "null"], "format": "date-time", "maxLength": 64},
+        "window_end": {"type": ["string", "null"], "format": "date-time", "maxLength": 64},
+        "truncated": {"type": "boolean"},
+        "backfill_limited": {"type": "boolean"},
+        "interrupted": {"type": "boolean"},
+        "reconciling": {"type": "boolean"}
+      }
+    },
+    "availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "state", "evidence", "checked_at", "coverage"],
+      "properties": {
+        "metric": {"$ref": "#/$defs/metric"},
+        "state": {"enum": ["available", "permission_required", "platform_feature_unavailable", "not_exported_by_samsung_mapping", "no_observation", "source_configuration_unverified", "companion_read_failed", "unknown"]},
+        "evidence": {"type": "string", "maxLength": 512},
+        "checked_at": {"type": "string", "format": "date-time", "maxLength": 64},
+        "coverage": {"$ref": "#/$defs/coverage"}
+      }
+    },
+    "change": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operation", "observation"],
+          "properties": {"operation": {"const": "upsert"}, "observation": {"$ref": "#/$defs/observation"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["operation", "record_id", "metric", "source_package", "upstream_last_modified_at"],
+          "properties": {
+            "operation": {"const": "delete"},
+            "record_id": {"type": "string", "minLength": 1, "maxLength": 512},
+            "metric": {"$ref": "#/$defs/metric"},
+            "source_package": {"const": "com.sec.android.app.shealth"},
+            "upstream_last_modified_at": {"type": ["string", "null"], "format": "date-time", "maxLength": 64}
+          }
+        }
+      ]
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_id", "metric", "record_kind", "observed_by_companion_at", "upstream_last_modified_at", "source_package", "recording_method", "attribution", "payload"],
+      "properties": {
+        "record_id": {"type": "string", "minLength": 1, "maxLength": 512},
+        "metric": {"$ref": "#/$defs/metric"},
+        "record_kind": {"enum": ["point", "interval", "series", "session", "composite", "aggregate"]},
+        "measured_at": {"type": "string", "format": "date-time", "maxLength": 64},
+        "start_at": {"type": "string", "format": "date-time", "maxLength": 64},
+        "end_at": {"type": "string", "format": "date-time", "maxLength": 64},
+        "zone_offset": {"type": ["string", "null"], "pattern": "^[+-][0-9]{2}:[0-9]{2}$", "maxLength": 6},
+        "start_zone_offset": {"type": ["string", "null"], "pattern": "^[+-][0-9]{2}:[0-9]{2}$", "maxLength": 6},
+        "end_zone_offset": {"type": ["string", "null"], "pattern": "^[+-][0-9]{2}:[0-9]{2}$", "maxLength": 6},
+        "observed_by_companion_at": {"type": "string", "format": "date-time", "maxLength": 64},
+        "upstream_last_modified_at": {"type": ["string", "null"], "format": "date-time", "maxLength": 64},
+        "source_package": {"type": "string", "minLength": 1, "maxLength": 255},
+        "recording_method": {"enum": ["active", "automatic", "manual", "unknown"]},
+        "attribution": {"$ref": "#/$defs/attribution"},
+        "payload": {"type": "object"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"metric": {"const": "vitals.heart_rate"}}},
+          "then": {"properties": {"source_package": {"enum": ["com.sec.android.app.shealth", "ai.clinicianassist.personalstate"]}}},
+          "else": {"properties": {"source_package": {"const": "com.sec.android.app.shealth"}}}
+        },
+        {
+          "if": {"properties": {"record_kind": {"enum": ["point", "composite"]}}},
+          "then": {
+            "required": ["measured_at"],
+            "not": {"anyOf": [
+              {"required": ["start_at"]},
+              {"required": ["end_at"]},
+              {"required": ["start_zone_offset"]},
+              {"required": ["end_zone_offset"]}
+            ]}
+          }
+        },
+        {
+          "if": {"properties": {"record_kind": {"enum": ["interval", "series", "session", "aggregate"]}}},
+          "then": {
+            "required": ["start_at", "end_at"],
+            "not": {"anyOf": [
+              {"required": ["measured_at"]},
+              {"required": ["zone_offset"]}
+            ]}
+          }
+        },
+        {"$ref": "#/$defs/metricPayload"}
+      ]
+    },
+    "valueCount": {"type": "object", "additionalProperties": false, "required": ["value", "unit"], "properties": {"value": {"type": "integer", "minimum": 0, "maximum": 1000000}, "unit": {"const": "count"}, "aggregation": {"enum": ["health_connect", "raw_interval"]}}},
+    "valueKcal": {"type": "object", "additionalProperties": false, "required": ["value", "unit"], "properties": {"value": {"type": "number", "minimum": 0, "maximum": 10000000}, "unit": {"const": "kcal"}}},
+    "valueMeters": {"type": "object", "additionalProperties": false, "required": ["value", "unit"], "properties": {"value": {"type": "number", "minimum": 0, "maximum": 10000000}, "unit": {"const": "m"}}},
+    "sampleBpm": {"type": "object", "additionalProperties": false, "required": ["time", "value", "unit"], "properties": {"time": {"type": "string", "format": "date-time", "maxLength": 64}, "value": {"type": "number", "minimum": 0, "maximum": 500}, "unit": {"const": "bpm"}}},
+    "sampleWatt": {"type": "object", "additionalProperties": false, "required": ["time", "value", "unit"], "properties": {"time": {"type": "string", "format": "date-time", "maxLength": 64}, "value": {"type": "number", "minimum": 0, "maximum": 100000}, "unit": {"const": "W"}}},
+    "sampleSpeed": {"type": "object", "additionalProperties": false, "required": ["time", "value", "unit"], "properties": {"time": {"type": "string", "format": "date-time", "maxLength": 64}, "value": {"type": "number", "minimum": 0, "maximum": 500}, "unit": {"const": "m/s"}}},
+    "seriesBpm": {"type": "object", "additionalProperties": false, "required": ["samples"], "properties": {"samples": {"type": "array", "minItems": 1, "maxItems": 2000, "items": {"$ref": "#/$defs/sampleBpm"}}}},
+    "seriesWatt": {"type": "object", "additionalProperties": false, "required": ["samples"], "properties": {"samples": {"type": "array", "minItems": 1, "maxItems": 2000, "items": {"$ref": "#/$defs/sampleWatt"}}}},
+    "seriesSpeed": {"type": "object", "additionalProperties": false, "required": ["samples"], "properties": {"samples": {"type": "array", "minItems": 1, "maxItems": 2000, "items": {"$ref": "#/$defs/sampleSpeed"}}}},
+    "metricPayload": {
+      "oneOf": [
+        {"properties": {"metric": {"const": "activity.steps"}, "record_kind": {"enum": ["interval", "aggregate"]}, "payload": {"$ref": "#/$defs/valueCount"}}},
+        {"properties": {"metric": {"const": "activity.exercise_calories"}, "record_kind": {"enum": ["interval", "aggregate"]}, "payload": {"$ref": "#/$defs/valueKcal"}}},
+        {"properties": {"metric": {"const": "activity.distance"}, "record_kind": {"enum": ["interval", "aggregate"]}, "payload": {"$ref": "#/$defs/valueMeters"}}},
+        {"properties": {"metric": {"const": "activity.exercise_session"}, "record_kind": {"const": "session"}, "payload": {"type": "object", "additionalProperties": false, "required": ["exercise_type"], "properties": {"exercise_type": {"type": "string", "minLength": 1, "maxLength": 128}, "title": {"type": ["string", "null"], "maxLength": 256}}}}},
+        {"properties": {"metric": {"const": "activity.exercise_power"}, "record_kind": {"const": "series"}, "payload": {"$ref": "#/$defs/seriesWatt"}}},
+        {"properties": {"metric": {"const": "activity.speed"}, "record_kind": {"const": "series"}, "payload": {"$ref": "#/$defs/seriesSpeed"}}},
+        {"properties": {"metric": {"const": "activity.vo2_max"}, "record_kind": {"const": "point"}, "payload": {"type": "object", "additionalProperties": false, "required": ["value", "unit", "measurement_method"], "properties": {"value": {"type": "number", "minimum": 0, "maximum": 500}, "unit": {"const": "mL/kg/min"}, "measurement_method": {"type": "string", "maxLength": 128}}}}},
+        {"properties": {"metric": {"const": "vitals.heart_rate"}, "record_kind": {"const": "series"}, "payload": {"$ref": "#/$defs/seriesBpm"}}},
+        {"properties": {"metric": {"const": "vitals.oxygen_saturation"}, "record_kind": {"const": "point"}, "payload": {"type": "object", "additionalProperties": false, "required": ["value", "unit"], "properties": {"value": {"type": "number", "minimum": 0, "maximum": 100}, "unit": {"const": "%"}}}}},
+        {"properties": {"metric": {"const": "vitals.blood_pressure"}, "record_kind": {"const": "composite"}, "payload": {"type": "object", "additionalProperties": false, "required": ["systolic", "diastolic", "unit"], "properties": {"systolic": {"type": "number", "minimum": 0, "maximum": 500}, "diastolic": {"type": "number", "minimum": 0, "maximum": 500}, "unit": {"const": "mmHg"}, "body_position": {"type": ["string", "null"], "maxLength": 128}, "measurement_site": {"type": ["string", "null"], "maxLength": 128}}}}},
+        {"properties": {"metric": {"const": "vitals.blood_glucose"}, "record_kind": {"const": "point"}, "payload": {"type": "object", "additionalProperties": false, "required": ["value", "unit"], "properties": {"value": {"type": "number", "minimum": 0, "maximum": 2000}, "unit": {"const": "mg/dL"}, "specimen_source": {"type": ["string", "null"], "maxLength": 128}, "relation_to_meal": {"type": ["string", "null"], "maxLength": 128}}}}},
+        {
+          "properties": {
+            "metric": {"const": "sleep.session"},
+            "record_kind": {"const": "session"},
+            "payload": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["stages"],
+              "properties": {
+                "title": {"type": ["string", "null"], "maxLength": 256},
+                "stages": {
+                  "type": "array",
+                  "maxItems": 2000,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["start_at", "end_at", "stage"],
+                    "properties": {
+                      "start_at": {"type": "string", "format": "date-time", "maxLength": 64},
+                      "end_at": {"type": "string", "format": "date-time", "maxLength": 64},
+                      "stage": {"enum": ["awake", "sleeping", "out_of_bed", "light", "deep", "rem", "unknown"]}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {"properties": {"metric": {"const": "body.weight"}, "record_kind": {"const": "point"}, "payload": {"type": "object", "additionalProperties": false, "required": ["value", "unit"], "properties": {"value": {"type": "number", "minimum": 0, "maximum": 1000}, "unit": {"const": "kg"}}}}},
+        {"properties": {"metric": {"const": "body.body_fat"}, "record_kind": {"const": "point"}, "payload": {"type": "object", "additionalProperties": false, "required": ["value", "unit"], "properties": {"value": {"type": "number", "minimum": 0, "maximum": 100}, "unit": {"const": "%"}}}}},
+        {"properties": {"metric": {"const": "body.basal_metabolic_rate"}, "record_kind": {"const": "point"}, "payload": {"type": "object", "additionalProperties": false, "required": ["value", "unit"], "properties": {"value": {"type": "number", "minimum": 0, "maximum": 20000}, "unit": {"const": "kcal/day"}}}}},
+        {"properties": {"metric": {"const": "body.height"}, "record_kind": {"const": "point"}, "payload": {"type": "object", "additionalProperties": false, "required": ["value", "unit"], "properties": {"value": {"type": "number", "minimum": 0, "maximum": 300}, "unit": {"const": "cm"}}}}},
+        {"properties": {"metric": {"const": "nutrition.intake"}, "record_kind": {"const": "interval"}, "payload": {"type": "object", "additionalProperties": false, "required": ["meal_type", "energy_kcal", "nutrients"], "properties": {"meal_type": {"type": "string", "maxLength": 64}, "name": {"type": ["string", "null"], "maxLength": 256}, "energy_kcal": {"type": ["number", "null"], "minimum": 0, "maximum": 100000}, "nutrients": {"type": "object", "additionalProperties": false, "properties": {"protein_g": {"type": ["number", "null"], "minimum": 0, "maximum": 100000}, "carbohydrate_g": {"type": ["number", "null"], "minimum": 0, "maximum": 100000}, "fat_g": {"type": ["number", "null"], "minimum": 0, "maximum": 100000}, "fiber_g": {"type": ["number", "null"], "minimum": 0, "maximum": 100000}, "sugar_g": {"type": ["number", "null"], "minimum": 0, "maximum": 100000}, "sodium_mg": {"type": ["number", "null"], "minimum": 0, "maximum": 10000000}}}}}}}
+      ]
+    }
+  }
+}

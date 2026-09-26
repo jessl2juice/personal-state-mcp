@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="personal-state-token" content="__PSM_TOKEN__">
+  <title>Personal State</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <svg class="icon-sprite" aria-hidden="true">
+    <symbol id="icon-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+    <symbol id="icon-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></symbol>
+    <symbol id="icon-table" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></symbol>
+    <symbol id="icon-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></symbol>
+    <symbol id="icon-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-15-6.7L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 15 6.7L21 16"/><path d="M16 16h5v5"/></symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="icon-print" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></symbol>
+    <symbol id="icon-message" viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8M8 13h5"/></symbol>
+    <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="icon-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="icon-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="icon-alert" viewBox="0 0 24 24"><path d="M10.3 2.9 1.8 17a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 2.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="icon-watch" viewBox="0 0 24 24"><path d="M9 2h6l1 4H8l1-4ZM8 18h8l-1 4H9l-1-4Z"/><circle cx="12" cy="12" r="6"/><path d="M12 9v3l2 1"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <main class="workspace">
+      <header class="topbar">
+        <div class="title-group">
+          <div class="brand-mark"><svg><use href="#icon-activity"/></svg></div>
+          <div>
+            <p class="eyebrow">Private health context</p>
+            <h1>Personal State</h1>
+          </div>
+        </div>
+        <div class="toolbar">
+          <div class="header-status">
+            <div class="status-line"><span id="rail-status-dot" class="status-dot"></span><span id="rail-status">Connecting</span></div>
+            <small id="rail-updated">Waiting for data</small>
+          </div>
+          <button id="refresh-button" class="icon-button" title="Refresh LibreLinkUp data" aria-label="Refresh LibreLinkUp data">
+            <svg><use href="#icon-refresh"/></svg>
+          </button>
+          <button id="print-button" class="secondary-button print-button" title="Print clinical review"><svg><use href="#icon-print"/></svg><span>Clinical review</span></button>
+          <button id="ask-button" class="command-button"><svg><use href="#icon-message"/></svg><span>Ask Codex</span></button>
+        </div>
+      </header>
+
+      <div id="app-message" class="app-message" role="status" aria-live="polite"></div>
+
+      <section id="overview" class="view-section is-active" aria-labelledby="overview-title">
+        <h2 id="overview-title" class="sr-only">Overview</h2>
+        <div class="current-band">
+          <div class="current-reading current-glucose">
+            <div class="vital-name">Glucose</div>
+            <div class="reading-label"><span id="freshness-dot" class="status-dot"></span><span id="freshness-label">Loading</span></div>
+            <div class="reading-value"><span id="current-value">--</span><span class="unit">mg/dL</span></div>
+            <p id="current-time">No reading loaded</p>
+          </div>
+          <div id="current-heart-card" class="current-reading current-heart">
+            <div class="vital-name">Heart rate</div>
+            <div class="reading-label"><span id="heart-freshness-dot" class="status-dot"></span><span id="heart-freshness-label">Waiting for data</span></div>
+            <div class="reading-value"><span id="current-heart-value">--</span><span id="current-heart-unit" class="unit">bpm</span></div>
+            <p id="current-heart-time">No heart-rate sample loaded</p>
+            <a id="heart-repair-action" class="heart-repair-action" href="/downloads/personal-state-companion.apk" download hidden><svg><use href="#icon-download"/></svg>Install sync update</a>
+          </div>
+          <div class="current-context">
+            <div class="context-head">
+              <span class="context-kicker">Decision-support context</span>
+              <span id="threshold-chip" class="state-chip">Threshold 80</span>
+            </div>
+            <h3 id="context-title">Waiting for current state</h3>
+            <p id="context-copy">The official Libre app and sensor remain the safety alert layer.</p>
+            <div class="context-meta">
+              <span><svg><use href="#icon-clock"/></svg><span id="data-age">Age unavailable</span></span>
+              <span><svg><use href="#icon-shield"/></svg>Informational only</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="range-row">
+          <div id="range-control" class="segmented-control" aria-label="History range">
+            <button data-range="24h" class="is-active">Day</button>
+            <button data-range="7d">Week</button>
+            <button data-range="30d">Month</button>
+            <button data-range="1y">Year</button>
+          </div>
+          <span id="range-caption" class="range-caption">Last 24 hours</span>
+        </div>
+
+        <div class="metric-grid" aria-label="Selected range summary">
+          <article class="metric-card glucose-card"><span>Glucose average</span><strong id="stat-average">--</strong><small>mg/dL</small></article>
+          <article class="metric-card glucose-card"><span>Glucose minimum</span><strong id="stat-minimum">--</strong><small>mg/dL</small></article>
+          <article class="metric-card glucose-card"><span>Glucose maximum</span><strong id="stat-maximum">--</strong><small>mg/dL</small></article>
+          <article class="metric-card accent-card"><span>Glucose below 80</span><strong id="stat-below">--</strong><small id="stat-below-detail">readings</small></article>
+        </div>
+
+        <div class="overview-grid">
+          <article class="panel chart-panel">
+            <div class="panel-header">
+              <div>
+                <p class="section-kicker">Synchronized history</p>
+                <h3>Physiology timeline</h3>
+                <p class="panel-subtitle">Separate scales, one recorded-time axis</p>
+              </div>
+              <div class="chart-header-meta">
+                <span id="comparison-chip" class="comparison-chip same-clock">Same person · Shared clock</span>
+                <div class="legend" aria-label="Chart legend">
+                  <span><i class="legend-line"></i><b>Glucose</b> mg/dL</span>
+                  <span><i class="legend-heart"></i><b id="chart-heart-label">Heart rate</b> bpm</span>
+                  <span><i class="legend-threshold"></i>80 context threshold</span>
+                </div>
+              </div>
+            </div>
+            <div id="chart-wrap" class="chart-wrap">
+              <canvas id="glucose-chart" role="img" aria-label="Glucose and heart-rate history chart"></canvas>
+              <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+              <div id="chart-empty" class="empty-state" hidden>No glucose or heart-rate readings in this range.</div>
+            </div>
+            <div class="coverage-strip" aria-label="Data coverage">
+              <div><span class="coverage-key glucose-key">Glucose coverage</span><strong id="glucose-coverage">No measurements</strong><small id="glucose-coverage-count">0 readings</small></div>
+              <div><span class="coverage-key heart-key">Heart-rate coverage</span><strong id="heart-coverage">No measurements</strong><small id="heart-coverage-count">0 samples</small></div>
+              <div class="comparison-coverage"><span class="coverage-key">Selected window</span><strong id="comparison-title">Day</strong><small id="comparison-detail">Waiting for sensor data</small></div>
+            </div>
+          </article>
+
+          <article class="panel clinical-facts-panel">
+            <div class="panel-header">
+              <div><p class="section-kicker">Clinical review</p><h3>Selected-period facts</h3></div>
+              <span id="report-generated" class="count-label">--</span>
+            </div>
+            <div class="fact-columns">
+              <section class="fact-group glucose-facts" aria-labelledby="glucose-facts-title">
+                <h4 id="glucose-facts-title">Glucose <span>mg/dL</span></h4>
+                <dl>
+                  <div><dt>Readings</dt><dd id="fact-glucose-count">--</dd></div>
+                  <div><dt>Average</dt><dd id="fact-glucose-average">--</dd></div>
+                  <div><dt>Median</dt><dd id="fact-glucose-median">--</dd></div>
+                  <div><dt>Range</dt><dd id="fact-glucose-range">--</dd></div>
+                  <div><dt>Below 80</dt><dd id="fact-glucose-below">--</dd></div>
+                  <div><dt>Variability</dt><dd id="fact-glucose-variability">--</dd></div>
+                </dl>
+              </section>
+              <section class="fact-group heart-facts" aria-labelledby="heart-facts-title">
+                <h4 id="heart-facts-title">Heart rate <span>bpm</span></h4>
+                <dl>
+                  <div><dt>Samples</dt><dd id="fact-heart-count">--</dd></div>
+                  <div><dt>Average</dt><dd id="fact-heart-average">--</dd></div>
+                  <div><dt>Range</dt><dd id="fact-heart-range">--</dd></div>
+                  <div><dt>First captured</dt><dd id="fact-heart-first">--</dd></div>
+                  <div><dt>Last captured</dt><dd id="fact-heart-last">--</dd></div>
+                  <div><dt>Window status</dt><dd id="fact-heart-sync">--</dd></div>
+                </dl>
+              </section>
+            </div>
+            <div class="interpretation-boundary"><strong id="comparison-fact-title">Same-person sensor timeline</strong><p id="comparison-fact-copy">Glucose and heart rate are plotted against the same recorded-time axis. A blank lane means that sensor has not synced for the selected period.</p></div>
+          </article>
+
+          <aside class="panel breakdown-panel">
+            <div class="panel-header">
+              <div>
+                <p class="section-kicker">Distribution</p>
+                <h3>Context bands</h3>
+              </div>
+              <span id="reading-count" class="count-label">0 readings</span>
+            </div>
+            <div class="breakdown-list">
+              <div class="breakdown-row">
+                <div><span class="band-dot below"></span><span>Below threshold</span><strong id="band-below-count">0</strong></div>
+                <div class="bar-track"><div id="band-below-bar" class="bar-fill below"></div></div>
+              </div>
+              <div class="breakdown-row">
+                <div><span class="band-dot near"></span><span>Near threshold</span><strong id="band-near-count">0</strong></div>
+                <div class="bar-track"><div id="band-near-bar" class="bar-fill near"></div></div>
+              </div>
+              <div class="breakdown-row">
+                <div><span class="band-dot above"></span><span>Above near band</span><strong id="band-above-count">0</strong></div>
+                <div class="bar-track"><div id="band-above-bar" class="bar-fill above"></div></div>
+              </div>
+            </div>
+            <div class="detail-list">
+              <div><span>Median</span><strong id="stat-median">-- mg/dL</strong></div>
+              <div><span>Variability</span><strong id="stat-variability">-- mg/dL</strong></div>
+              <div><span>Data gaps</span><strong id="gap-count">--</strong></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="watch" class="view-section is-active consolidated-section" aria-labelledby="watch-title">
+        <div class="section-heading watch-heading">
+          <div><p class="section-kicker">Galaxy Watch5 Pro through Samsung Health</p><h2 id="watch-title">Available watch data</h2></div>
+          <div class="watch-heading-actions">
+            <a class="secondary-button" href="/downloads/personal-state-companion.apk" download><svg><use href="#icon-download"/></svg>Update phone companion</a>
+            <span id="watch-status-chip" class="state-chip">Not paired</span>
+          </div>
+        </div>
+
+        <div class="watch-sync-band">
+          <div><span>Companion Health Connect read</span><strong id="watch-read-time">No read recorded</strong></div>
+          <div><span>Server upload</span><strong id="watch-upload-time">No upload recorded</strong></div>
+          <div><span>Stored history</span><strong id="watch-history-count">0 observations</strong></div>
+          <div><span>Retention</span><strong id="watch-retention">--</strong></div>
+        </div>
+
+        <div id="watch-latest-grid" class="metric-grid health-metric-grid" aria-label="Latest recorded watch and Samsung Health measurements"></div>
+
+        <div class="section-heading watch-recent-heading">
+          <div><p class="section-kicker">Source-labeled observations</p><h2>Recent watch data</h2></div>
+          <button id="watch-export-button" class="secondary-button"><svg><use href="#icon-download"/></svg>Export watch data</button>
+        </div>
+        <div class="table-shell watch-table-shell">
+          <table>
+            <thead><tr><th>Recorded</th><th>Metric</th><th>Value</th><th>Attribution</th><th>Companion observed</th><th>Server ingest</th></tr></thead>
+            <tbody id="watch-readings-body"></tbody>
+          </table>
+        </div>
+        <div class="safety-band watch-authority-band">
+          <svg><use href="#icon-shield"/></svg>
+          <div><strong>Samsung remains authoritative</strong><p id="watch-authority">Samsung Health and Samsung Health Monitor remain authoritative for device features and official notices.</p></div>
+        </div>
+      </section>
+
+      <section id="history" class="view-section is-active consolidated-section" aria-labelledby="history-title">
+        <div class="section-heading">
+          <div><p class="section-kicker">Libre continuity</p><h2 id="history-title">Glucose history and gaps</h2></div>
+          <span id="history-total" class="count-label">0 stored readings</span>
+        </div>
+        <div class="history-strip">
+          <div><span>First stored</span><strong id="history-first">--</strong></div>
+          <div><span>Latest stored</span><strong id="history-last">--</strong></div>
+          <div><span>Selected coverage</span><strong id="history-coverage">--</strong></div>
+        </div>
+        <article class="panel gap-panel">
+          <div class="panel-header"><div><p class="section-kicker">Detected intervals</p><h3>Gaps longer than 30 minutes</h3></div></div>
+          <div id="gap-list" class="gap-list"></div>
+        </article>
+      </section>
+
+      <section id="readings" class="view-section is-active consolidated-section" aria-labelledby="readings-title">
+        <div class="section-heading">
+          <div><p class="section-kicker">Latest 200 in range</p><h2 id="readings-title">Glucose readings</h2></div>
+          <button id="table-export-button" class="secondary-button"><svg><use href="#icon-download"/></svg>Export glucose data</button>
+        </div>
+        <div class="table-shell">
+          <table>
+            <thead><tr><th>Measured</th><th>Glucose</th><th>Trend</th><th>Received</th><th>Type</th></tr></thead>
+            <tbody id="readings-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="system" class="view-section is-active consolidated-section" aria-labelledby="system-title">
+        <div class="section-heading">
+          <div><p class="section-kicker">Data integrity</p><h2 id="system-title">Sources and provenance</h2></div>
+          <span class="privacy-badge"><svg><use href="#icon-shield"/></svg>Private dashboard</span>
+        </div>
+        <div class="system-grid">
+          <article class="panel">
+            <div class="panel-header"><div><p class="section-kicker">Collector</p><h3>LibreLinkUp activity</h3></div><span id="collector-status" class="state-chip">--</span></div>
+            <div id="collector-runs" class="run-list"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-header"><div><p class="section-kicker">Source</p><h3>Latest reading provenance</h3></div></div>
+            <dl class="provenance-list">
+              <div><dt>Adapter</dt><dd id="prov-adapter">--</dd></div>
+              <div><dt>Vendor</dt><dd id="prov-vendor">--</dd></div>
+              <div><dt>Source</dt><dd id="prov-source">--</dd></div>
+              <div><dt>Measurement time</dt><dd id="prov-time">--</dd></div>
+              <div><dt>Received time</dt><dd id="prov-received">--</dd></div>
+              <div><dt>Regional host</dt><dd id="prov-host">--</dd></div>
+            </dl>
+          </article>
+        </div>
+        <div class="safety-band">
+          <svg><use href="#icon-alert"/></svg>
+          <div><strong>Not an alarm or treatment system</strong><p>Use the official Libre app and sensor for alerts and health decisions.</p></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="ask-dialog" class="ask-dialog">
+    <form method="dialog" class="dialog-shell">
+      <div class="dialog-header">
+        <div><p class="section-kicker">Selective context</p><h2>Ask Codex</h2></div>
+        <button value="cancel" class="icon-button close-button" aria-label="Close"><svg><use href="#icon-x"/></svg></button>
+      </div>
+      <label for="question-input">Question</label>
+      <textarea id="question-input" rows="5" placeholder="What changed overnight?"></textarea>
+      <div class="prompt-preview">
+        <span>Context requested</span>
+        <strong id="prompt-range">Last 24 hours + current state</strong>
+      </div>
+      <button id="copy-prompt-button" value="default" type="button" class="command-button full-width"><svg><use href="#icon-copy"/></svg><span>Copy question for Codex</span></button>
+      <p id="copy-status" class="copy-status" role="status"></p>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

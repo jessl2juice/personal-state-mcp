@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.PersonalState.Wear" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">#071C18</item>
+        <item name="android:colorAccent">#56D7A6</item>
+        <item name="android:navigationBarColor">#071C18</item>
+        <item name="android:statusBarColor">#071C18</item>
+    </style>
+</resources>

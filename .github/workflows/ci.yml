@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[dev,mcp,keychain]"
+      - name: Test
+        run: python -m pytest -q
+      - name: Check dashboard JavaScript
+        run: node --check src/personal_state_mcp/dashboard_static/app.js
+      - name: Parse PowerShell
+        shell: pwsh
+        run: |
+          $errorsFound = @()
+          Get-ChildItem installer,scripts -Filter *.ps1 -Recurse | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            $errorsFound += $errors
+          }
+          if ($errorsFound.Count) { $errorsFound | Format-List; exit 1 }
+
+  android:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: android/health-connect-companion
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: wrapper
+      - name: Test and lint phone and watch
+        shell: pwsh
+        run: .\gradlew.bat --no-daemon :app:testDebugUnitTest :app:lintDebug :wear:lintDebug :app:assembleDebug :wear:assembleDebug
