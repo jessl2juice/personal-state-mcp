@@ -52,3 +52,11 @@ def test_combined_android_installer_requires_both_apps() -> None:
     assert "personal-state-watch.apk" in installer
     assert "install -r $phoneApk" in installer
     assert "install -r $watchApk" in installer
+
+
+def test_main_installer_offers_phone_and_watch_as_one_flow() -> None:
+    installer = (ROOT / "installer" / "Install-PersonalState.ps1").read_text(encoding="utf-8")
+
+    assert "SkipAndroidCompanions" in installer
+    assert 'Join-Path $releaseRoot "Install-AndroidCompanions.ps1"' in installer
+    assert "& $androidInstaller" in installer

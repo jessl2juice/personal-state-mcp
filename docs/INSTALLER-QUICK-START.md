@@ -29,13 +29,14 @@ Do not use the sensor owner's primary Libre account as the follower account.
 2. Double-click **Install Personal State.cmd**.
 3. Enter the dedicated LibreLinkUp follower email.
 4. Enter its password in the protected prompt. The password goes to Windows Credential Manager and is not written to the settings file.
-5. Wait for the confirmation, then open the **Personal State** desktop shortcut.
+5. At **Phone and watch setup**, press Enter to continue with both companion apps.
+6. After setup completes, open the **Personal State** desktop shortcut.
 
 The installer creates two current-user background tasks. They start the dashboard and collector after sign-in and restart them after ordinary failures. Administrator access is not required.
 
 ## Add the phone and watch
 
-Double-click **Install Phone and Watch.cmd**. This is one guided setup that installs both companion apps.
+The main installer starts this guided setup automatically. To rerun only the device step later, double-click **Install Phone and Watch.cmd**.
 
 1. Connect the Android phone by USB and approve USB debugging.
 2. On the watch, open **Settings > Developer options > Wireless debugging**.

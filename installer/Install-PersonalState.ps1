@@ -7,6 +7,7 @@ param(
     [switch]$SkipCredentialPrompt,
     [switch]$SkipScheduledTasks,
     [switch]$SkipShortcut,
+    [switch]$SkipAndroidCompanions,
     [switch]$NoLaunch
 )
 
@@ -208,7 +209,22 @@ IconIndex=15
 Write-Step "Installation complete"
 Write-Host "Your health history stays in $DataRoot"
 Write-Host "Dashboard: http://127.0.0.1:8766/"
-Write-Host "Run 'Install Phone and Watch.cmd' to install both companion apps in one guided step."
+
+$androidInstaller = Join-Path $releaseRoot "Install-AndroidCompanions.ps1"
+if (-not (Test-Path -LiteralPath $androidInstaller)) {
+    $androidInstaller = Join-Path $releaseRoot "installer\Install-AndroidCompanions.ps1"
+}
+
+if (-not $SkipAndroidCompanions -and (Test-Path -LiteralPath $androidInstaller)) {
+    Write-Step "Phone and watch setup"
+    $installCompanions = Read-Host "Install the matching phone and watch apps now? [Y/n]"
+    if ([string]::IsNullOrWhiteSpace($installCompanions) -or $installCompanions.Trim().ToLowerInvariant() -in @("y", "yes")) {
+        & $androidInstaller
+    }
+    else {
+        Write-Host "Companion setup skipped. Run 'Install Phone and Watch.cmd' later to install both apps together."
+    }
+}
 
 if (-not $NoLaunch -and -not $SkipScheduledTasks) {
     Start-Sleep -Seconds 4

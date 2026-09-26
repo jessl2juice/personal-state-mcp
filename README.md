@@ -153,7 +153,7 @@ android/health-connect-companion/app/build/outputs/apk/debug/app-debug.apk
 android/health-connect-companion/wear/build/outputs/apk/debug/wear-debug.apk
 ```
 
-The Windows release includes signed phone and watch APKs and a single `Install Phone and Watch.cmd` flow. For broad distribution, the two builds use the same package name and signing identity and are prepared for one Google Play listing. Wear OS still requires the user to confirm installation and health permissions; Android does not permit a phone app to silently install another app on a watch.
+The main Windows installer continues directly into a guided phone-and-watch setup by default. It installs the signed phone APK and then the matching signed watch APK in the same flow; `Install Phone and Watch.cmd` is also included for rerunning only that step. For broad distribution, the two builds use the same package name and signing identity and are prepared for one Google Play listing. Wear OS still requires the user to confirm installation and health permissions; Android does not permit a phone app to silently install another app on a watch.
 
 Real-device activation remains intentionally separate from the synthetic build:
 

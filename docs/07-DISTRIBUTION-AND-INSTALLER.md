@@ -17,7 +17,8 @@ The installer is current-user only and does not require administrator privileges
 5. stores the Libre password in Windows Credential Manager;
 6. registers dashboard and collector tasks at sign-in;
 7. creates a local dashboard shortcut;
-8. preserves data and credentials on upgrade.
+8. preserves data and credentials on upgrade;
+9. offers the combined phone-and-watch installation immediately, unless explicitly skipped with `-SkipAndroidCompanions`.
 
 Uninstall preserves data by default. Destructive removal requires the explicit `-DeleteData` switch and deletes configured credentials before removing the application environment.
 
