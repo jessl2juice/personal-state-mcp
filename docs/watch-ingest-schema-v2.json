@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phy.clinicianassist.ai/schemas/personal-state-watch-batch-v2.json",
+  "title": "Personal State watch ingestion batch v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "adapter",
+    "identity_namespace_id",
+    "batch_id",
+    "installation_id",
+    "generated_at",
+    "changes",
+    "availability"
+  ],
+  "properties": {
+    "schema_version": {"const": "personal-state-watch-batch/v2"},
+    "adapter": {"$ref": "#/$defs/adapter"},
+    "identity_namespace_id": {"type": "string", "format": "uuid"},
+    "batch_id": {"type": "string", "format": "uuid"},
+    "installation_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{16,128}$"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "changes": {"type": "array", "maxItems": 500, "items": {"$ref": "#/$defs/sourceChange"}},
+    "availability": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/availability"}}
+  },
+  "$defs": {
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": {
+          "enum": ["android_health_connect", "android_samsung_health_data", "wear_health_services", "synthetic_test"]
+        },
+        "version": {"type": "string", "pattern": "^[A-Za-z0-9._+-]{1,64}$"}
+      }
+    },
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "attribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "evidence"],
+      "properties": {
+        "state": {"enum": ["watch_confirmed", "samsung_health_unattributed", "phone", "manual", "external_device", "unknown"]},
+        "evidence": {"type": "string", "maxLength": 512},
+        "device_type": {"type": "string", "maxLength": 512},
+        "device_model": {"type": "string", "maxLength": 512}
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapter", "record_hash", "metric", "record_kind", "observed_by_companion_at",
+        "upstream_last_modified_at", "source_package", "recording_method", "attribution", "payload"
+      ],
+      "properties": {
+        "adapter": {"$ref": "#/$defs/adapter"},
+        "record_hash": {"$ref": "#/$defs/hash"},
+        "association_hash": {"$ref": "#/$defs/hash"},
+        "metric": {
+          "enum": [
+            "activity.steps", "activity.exercise_calories", "activity.distance", "activity.exercise_session",
+            "activity.exercise_power", "activity.speed", "activity.vo2_max", "activity.floors", "activity.active_time",
+            "vitals.heart_rate", "vitals.oxygen_saturation", "vitals.oxygen_saturation_series",
+            "vitals.blood_pressure", "vitals.blood_glucose", "vitals.skin_temperature",
+            "sleep.session", "sleep.samsung_session", "sleep.summary", "sleep.score", "sleep.apnea_detected_sign",
+            "wellness.energy_score", "cardiac.irregular_rhythm_notification",
+            "body.weight", "body.body_fat", "body.basal_metabolic_rate", "body.height", "nutrition.intake"
+          ]
+        },
+        "record_kind": {"enum": ["point", "interval", "series", "session", "composite", "aggregate", "daily"]},
+        "measured_at": {"type": "string", "format": "date-time"},
+        "start_at": {"type": "string", "format": "date-time"},
+        "end_at": {"type": "string", "format": "date-time"},
+        "local_date": {"type": "string", "format": "date"},
+        "zone_offset": {"type": "string", "pattern": "^[+-](0[0-9]|1[0-4]):[0-5][0-9]$"},
+        "start_zone_offset": {"type": "string", "pattern": "^[+-](0[0-9]|1[0-4]):[0-5][0-9]$"},
+        "end_zone_offset": {"type": "string", "pattern": "^[+-](0[0-9]|1[0-4]):[0-5][0-9]$"},
+        "observed_by_companion_at": {"type": "string", "format": "date-time"},
+        "upstream_last_modified_at": {"type": ["string", "null"], "format": "date-time"},
+        "source_package": {"type": "string", "maxLength": 512},
+        "recording_method": {"enum": ["active", "automatic", "manual", "unknown"]},
+        "attribution": {"$ref": "#/$defs/attribution"},
+        "payload": {"type": "object"}
+      }
+    },
+    "deletion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter", "record_hash", "metric", "source_package", "upstream_last_modified_at"],
+      "properties": {
+        "adapter": {"$ref": "#/$defs/adapter"},
+        "record_hash": {"$ref": "#/$defs/hash"},
+        "metric": {"type": "string"},
+        "source_package": {"type": "string", "maxLength": 512},
+        "upstream_last_modified_at": {"type": ["string", "null"], "format": "date-time"}
+      }
+    },
+    "manifestMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "record_hash"],
+      "properties": {"metric": {"type": "string"}, "record_hash": {"$ref": "#/$defs/hash"}}
+    },
+    "associationManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter", "association_hash", "members"],
+      "properties": {
+        "adapter": {"$ref": "#/$defs/adapter"},
+        "association_hash": {"$ref": "#/$defs/hash"},
+        "members": {"type": "array", "maxItems": 500, "items": {"$ref": "#/$defs/manifestMember"}}
+      }
+    },
+    "sourceChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation", "source_type", "changed_at", "adapter", "observations", "deletions"],
+      "properties": {
+        "operation": {"enum": ["upsert", "delete"]},
+        "source_type": {"type": "string", "minLength": 1, "maxLength": 512},
+        "changed_at": {"type": "string", "format": "date-time"},
+        "adapter": {"$ref": "#/$defs/adapter"},
+        "observations": {"type": "array", "maxItems": 500, "items": {"$ref": "#/$defs/observation"}},
+        "deletions": {"type": "array", "maxItems": 500, "items": {"$ref": "#/$defs/deletion"}},
+        "association_manifest": {"$ref": "#/$defs/associationManifest"}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["window_start", "window_end", "truncated", "backfill_limited", "interrupted", "reconciling"],
+      "properties": {
+        "window_start": {"type": ["string", "null"], "format": "date-time"},
+        "window_end": {"type": ["string", "null"], "format": "date-time"},
+        "truncated": {"type": "boolean"},
+        "backfill_limited": {"type": "boolean"},
+        "interrupted": {"type": "boolean"},
+        "reconciling": {"type": "boolean"}
+      }
+    },
+    "availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter", "metric", "state", "evidence", "coverage_checked_at", "coverage"],
+      "properties": {
+        "adapter": {"$ref": "#/$defs/adapter"},
+        "metric": {"type": "string"},
+        "state": {
+          "enum": [
+            "available", "permission_required", "adapter_not_installed", "provider_partnership_required",
+            "not_exposed_by_provider", "platform_feature_unavailable", "no_observation",
+            "source_configuration_unverified", "companion_read_failed", "unknown"
+          ]
+        },
+        "evidence": {"type": "string", "maxLength": 512},
+        "coverage_checked_at": {"type": "string", "format": "date-time"},
+        "coverage": {"$ref": "#/$defs/coverage"}
+      }
+    }
+  }
+}

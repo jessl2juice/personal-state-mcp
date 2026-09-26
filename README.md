@@ -33,8 +33,9 @@ See [docs/design.md](docs/design.md) for the detailed design and source links. I
 - The current practical programmatic path is unofficial LibreLinkUp/LibreView-compatible access and can break without notice.
 - `lozit/mcp-freestyle` is a current, useful reference, but this project does not depend on it because this project needs Python, long-term local persistence, and a different MCP contract.
 - Samsung Health can export supported categories to Health Connect. The connector filters reads to Samsung Health-origin records and never requests write, route, or location permissions.
-- Samsung's stress score, resting heart rate, HRV, skin temperature, floors, and activity-tracker active-time summary are not in Samsung's documented Health Connect export mapping. The dashboard labels these as unavailable; it does not infer stress from heart rate, sleep, or other signals.
-- Samsung Health Data SDK has additional partnership and production-registration requirements, so it is not the first integration path.
+- Samsung's stress score, resting heart rate, HRV, skin temperature, floors, and activity-tracker active-time summary are not in Samsung's documented Health Connect export mapping. The Health Connect adapter labels those categories by source and never infers stress from heart rate, sleep, or other signals.
+- The server now has a closed v2 contract for richer Samsung Health Data SDK records: continuous blood oxygen, sleep sessions and score, skin temperature, Energy Score, irregular-rhythm notifications, sleep-apnea detected signs, floors, and active time. These metrics are denied to MCP agents by default.
+- The Samsung SDK phone adapter is gated on obtaining the proprietary SDK and Samsung authorization. The SDK binary is not committed or redistributed by this public repository.
 - Future Fitbit work should target Google Health API rather than new reliance on the legacy Fitbit Web API.
 
 ## Install
@@ -166,6 +167,12 @@ Real-device activation remains intentionally separate from the synthetic build:
 Use `scripts/create_phone_pairing.py` to store the Access credential in the OS keychain and create the temporary pairing file. Remove the plaintext file from the computer and phone immediately after Android imports it. Do not run connected-device tests against the production companion application because Android test setup can clear its encrypted pairing and Health Connect grants.
 
 The Health Connect companion cannot trigger a Galaxy Watch-to-Samsung Health sync and cannot read data that Samsung does not export. Continuous monitoring uses more watch battery, yields while another exercise app owns Health Services, and cannot produce readings while the watch is off-body or has poor sensor contact. It is not an alarm or safety monitor. Samsung Health and Samsung Health Monitor remain authoritative for device features and official notices.
+
+### Samsung Health Data SDK expansion
+
+The non-proprietary server side is implemented behind schema `personal-state-watch-batch/v2`. It includes adapter-scoped identities and deletes, complete sleep-family reconciliation, per-adapter availability with a 26-hour freshness limit, source-aware dashboard labels, provenance-rich CSV export, a production-rejected synthetic adapter, and default-denied MCP policy for every new metric. The normative contract is [docs/watch-ingest-schema-v2.json](docs/watch-ingest-schema-v2.json).
+
+The real phone reader is intentionally not bundled yet. Shipping it requires the owner or distributor to obtain Samsung Health Data SDK 1.1.0 under Samsung's terms, register the Android package and signing certificate, receive the needed data-type authorization, and complete real-device validation. A missing SDK is reported as `adapter_not_installed`; it is never presented as absent or normal physiology.
 
 ## Run MCP
 

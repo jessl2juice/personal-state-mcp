@@ -12,6 +12,12 @@ from .storage import StateStore
 from .watch_contract import MAX_AGENT_HOURS, MAX_AGENT_PAGE, WatchContractError, decode_cursor, encode_cursor, observation_recency
 
 
+CLINICAL_FINDING_METRICS = {
+    "cardiac.irregular_rhythm_notification",
+    "sleep.apnea_detected_sign",
+}
+
+
 EMPTY_PROVENANCE = {
     "adapter": None,
     "vendor": None,
@@ -217,7 +223,7 @@ class HealthService:
             self.config.near_threshold_margin_mg_dl,
         )
         recent = self.store.recent_glucose(hours=3, limit=96)
-        watch_summary = self._watch_summary() if self.config.watch_enabled else {
+        watch_summary = self._watch_summary(include_clinical_findings=False) if self.config.watch_enabled else {
             "enabled": False,
             "latest": {},
             "message": "Watch collection is not enabled.",
@@ -253,9 +259,11 @@ class HealthService:
         payload["observation_recency"] = observation_recency(observation, now)
         return payload
 
-    def _watch_summary(self) -> dict[str, Any]:
+    def _watch_summary(self, *, include_clinical_findings: bool = True) -> dict[str, Any]:
         now = self.clock()
         allowed = set(self.config.watch_mcp_metrics)
+        if not include_clinical_findings:
+            allowed -= CLINICAL_FINDING_METRICS
         latest = self.store.latest_watch_by_metric(allowed)
         return {
             "enabled": True,
@@ -289,6 +297,7 @@ class HealthService:
         summary = self._watch_summary()
         latest = summary["latest"]
         statuses = [item["observation_recency"]["status"] for item in latest.values()]
+        adapter_ids = sorted({item["provenance"]["adapter"] for item in latest.values()})
         return ResponseEnvelope(
             ok=bool(latest),
             tool=tool,
@@ -298,7 +307,12 @@ class HealthService:
                 "status": "mixed" if len(set(statuses)) > 1 else (statuses[0] if statuses else "unavailable"),
                 "reason": "Recency is evaluated per metric; Samsung/watch synchronization state is unknown.",
             },
-            provenance={"adapter": "android_health_connect", "vendor": "Samsung", "source": "Samsung Health via Health Connect"},
+            provenance={
+                "adapter": adapter_ids[0] if len(adapter_ids) == 1 else ("mixed" if adapter_ids else None),
+                "adapters": adapter_ids,
+                "vendor": "Samsung",
+                "source": "Persisted source provenance is included on every observation.",
+            },
             safety=WATCH_SAFETY_NOTICE,
             errors=[] if latest else [ErrorInfo("no_watch_data", "No agent-authorized watch observations are stored.", retryable=True)],
         ).public_dict()
@@ -421,7 +435,11 @@ class HealthService:
                 "exposure_policy": {"allowed_metrics": sorted(allowed)},
             },
             freshness=observation_recency(page[0], now) if page else {"status": "unavailable", "reason": "No observations are stored."},
-            provenance={"adapter": "android_health_connect", "vendor": "Samsung", "source": "Samsung Health via Health Connect"},
+            provenance=(
+                page[0].public_dict()["provenance"]
+                if page
+                else EMPTY_PROVENANCE
+            ),
             safety=WATCH_SAFETY_NOTICE,
             errors=[] if page else [ErrorInfo("no_watch_data", "No observations are stored for this metric and range.", retryable=True)],
         ).public_dict()

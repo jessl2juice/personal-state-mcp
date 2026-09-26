@@ -153,6 +153,7 @@ Health observations use one of these record kinds:
 - `session`
 - `composite`
 - `aggregate`
+- `daily` (v2 only, with required local date and zone offset)
 
 Common fields include:
 
@@ -167,7 +168,28 @@ Common fields include:
 - attribution state.
 - canonical typed payload.
 
-The normative ingest definition is [watch-ingest-schema-v1.json](watch-ingest-schema-v1.json).
+The original Health Connect and direct-Wear contract remains [watch-ingest-schema-v1.json](watch-ingest-schema-v1.json). The adapter-aware Samsung contract is [watch-ingest-schema-v2.json](watch-ingest-schema-v2.json). Both are accepted by the same authenticated endpoint; unknown versions fail closed.
+
+### Adapter-aware v2 records
+
+Schema v2 persists adapter id/version, identity namespace, keyed source-record hash, optional parent-association hash, event time, companion-read time, server-ingest time, and original normalized payload. Mixed-adapter batches are rejected. A delete is scoped to one adapter and identity namespace, so it cannot erase an equivalent record owned by another adapter.
+
+Samsung sleep updates are one atomic source change. The change includes a complete association manifest for the summary, sessions, optional score, and associated oxygen or temperature records. Replacing the manifest tombstones members that are no longer present; a parent deletion supplies an empty manifest and removes the family atomically.
+
+New Samsung-specific observation metrics are:
+
+- `vitals.oxygen_saturation_series`
+- `sleep.samsung_session`
+- `sleep.summary`
+- `sleep.score`
+- `vitals.skin_temperature`
+- `wellness.energy_score`
+- `cardiac.irregular_rhythm_notification`
+- `sleep.apnea_detected_sign`
+- `activity.floors`
+- `activity.active_time`
+
+All are excluded from the default MCP allowlist. Rhythm and apnea findings remain excluded from `health.current_state()` even if explicit history access is later enabled.
 
 ## Attribution states
 
@@ -190,6 +212,8 @@ Do not translate Samsung Health origin alone into `watch_confirmed`.
 - `source_configuration_unverified`
 - `companion_read_failed`
 - `unknown`
+
+Schema v2 also supports `adapter_not_installed`, `provider_partnership_required`, and `not_exposed_by_provider`. Availability is stored by active installation, adapter, and metric. Reports older than 26 hours are shown as stale evidence and merge to `unknown`; `no_observation` never means a normal or negative result.
 
 Permission granted with no record means `no_observation`. It does not prove watch or Samsung synchronization failure.
 

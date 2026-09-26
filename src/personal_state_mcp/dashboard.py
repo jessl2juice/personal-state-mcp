@@ -25,6 +25,7 @@ from .storage import StateStore
 from .watch_contract import (
     MAX_BODY_BYTES,
     OBSERVATION_METRICS,
+    SCHEMA_VERSION,
     STATIC_UNAVAILABLE,
     WatchContractError,
     batch_to_observations,
@@ -33,6 +34,13 @@ from .watch_contract import (
     parse_json_strict,
     signature_matches,
     validate_batch,
+)
+from .watch_contract_v2 import (
+    SCHEMA_VERSION_V2,
+    SAMSUNG_OBSERVATION_METRICS,
+    V2_AVAILABILITY_ONLY_METRICS,
+    batch_v2_to_observations,
+    validate_batch_v2,
 )
 
 
@@ -51,6 +59,20 @@ MAX_SOURCE_READINGS = 200_000
 MAX_CHART_POINTS = 1_200
 HEART_LIVE_MAX_AGE_SECONDS = 60
 WATCH_INGEST_REQUESTS_PER_MINUTE = 40
+AVAILABILITY_TTL = timedelta(hours=26)
+AVAILABILITY_PRECEDENCE = (
+    "available",
+    "permission_required",
+    "provider_partnership_required",
+    "companion_read_failed",
+    "source_configuration_unverified",
+    "no_observation",
+    "platform_feature_unavailable",
+    "adapter_not_installed",
+    "not_exported_by_samsung_mapping",
+    "not_exposed_by_provider",
+    "unknown",
+)
 
 
 def _parse_dt(value: str | None) -> datetime | None:
@@ -269,6 +291,86 @@ def _heart_sync_status(
     }
 
 
+def _merged_watch_availability(
+    rows: list[dict[str, Any]],
+    active_installations: set[str],
+    now: datetime,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    active_rows: list[dict[str, Any]] = []
+    for item in rows:
+        if item.get("installation_hash") not in active_installations:
+            continue
+        checked_at = _parse_dt(item.get("checked_at_utc"))
+        enriched = dict(item)
+        enriched["stale"] = checked_at is None or now - checked_at > AVAILABILITY_TTL
+        active_rows.append(enriched)
+
+    all_metrics = (
+        set(OBSERVATION_METRICS)
+        | SAMSUNG_OBSERVATION_METRICS
+        | V2_AVAILABILITY_ONLY_METRICS
+        | set(STATIC_UNAVAILABLE)
+        | {item["metric"] for item in active_rows}
+    )
+    rank = {state: index for index, state in enumerate(AVAILABILITY_PRECEDENCE)}
+    merged: list[dict[str, Any]] = []
+    for metric in sorted(all_metrics):
+        metric_rows = [item for item in active_rows if item["metric"] == metric]
+        eligible = [item for item in metric_rows if not item["stale"]]
+        if eligible:
+            chosen = min(
+                eligible,
+                key=lambda item: (
+                    rank.get(item["state"], len(rank)),
+                    -(_parse_dt(item.get("checked_at_utc")) or datetime(1970, 1, 1, tzinfo=timezone.utc)).timestamp(),
+                    item.get("adapter_id", ""),
+                ),
+            )
+            merged.append({**chosen, "contributors": len(eligible), "merged": True})
+            continue
+        if metric_rows:
+            newest = max(metric_rows, key=lambda item: item.get("checked_at_utc") or "")
+            merged.append(
+                {
+                    **newest,
+                    "state": "unknown",
+                    "evidence": "Coverage report older than 26 hours.",
+                    "contributors": 0,
+                    "merged": True,
+                }
+            )
+            continue
+        if metric in STATIC_UNAVAILABLE:
+            merged.append(
+                {
+                    "metric": metric,
+                    "adapter_id": "android_health_connect",
+                    "adapter_version": "legacy-v1",
+                    "state": "not_exported_by_samsung_mapping",
+                    "evidence": STATIC_UNAVAILABLE[metric],
+                    "checked_at_utc": None,
+                    "coverage": {"window_start": None, "window_end": None},
+                    "contributors": 0,
+                    "merged": True,
+                }
+            )
+            continue
+        merged.append(
+            {
+                "metric": metric,
+                "adapter_id": None,
+                "adapter_version": None,
+                "state": "unknown",
+                "evidence": "Awaiting an active companion coverage report.",
+                "checked_at_utc": None,
+                "coverage": {"window_start": None, "window_end": None},
+                "contributors": 0,
+                "merged": True,
+            }
+        )
+    return merged, active_rows
+
+
 class DashboardApp:
     def __init__(self, config: AppConfig):
         self.config = config
@@ -323,43 +425,11 @@ class DashboardApp:
         since: datetime | None,
         glucose_readings: list[GlucoseReading] | None = None,
     ) -> dict[str, Any]:
-        stored_availability = {item["metric"]: item for item in self.store.watch_availability()}
-        for metric in OBSERVATION_METRICS:
-            stored_availability.setdefault(
-                metric,
-                {
-                    "metric": metric,
-                    "state": "unknown",
-                    "evidence": "Awaiting a permission and coverage report from the phone companion.",
-                    "checked_at_utc": None,
-                    "coverage": {
-                        "window_start": None,
-                        "window_end": None,
-                        "truncated": False,
-                        "backfill_limited": False,
-                        "interrupted": False,
-                        "reconciling": False,
-                    },
-                },
-            )
-        for metric, evidence in STATIC_UNAVAILABLE.items():
-            stored_availability.setdefault(
-                metric,
-                {
-                    "metric": metric,
-                    "state": "not_exported_by_samsung_mapping",
-                    "evidence": evidence,
-                    "checked_at_utc": "2026-09-24T00:00:00Z",
-                    "coverage": {
-                        "window_start": None,
-                        "window_end": None,
-                        "truncated": False,
-                        "backfill_limited": False,
-                        "interrupted": False,
-                        "reconciling": False,
-                    },
-                },
-            )
+        merged_availability, availability_by_adapter = _merged_watch_availability(
+            self.store.watch_availability(),
+            self.store.active_watch_installation_hashes(),
+            now,
+        )
         latest = self.store.latest_watch_by_metric()
         latest_payload = {}
         for metric, observation in latest.items():
@@ -371,26 +441,30 @@ class DashboardApp:
             metric="vitals.heart_rate", since=since, limit=5000
         )
         heart_samples: list[dict[str, Any]] = []
+        direct_heart_samples: list[dict[str, Any]] = []
         for record in heart_records:
             for sample in record.payload.get("samples", []):
                 sample_time = _parse_dt(sample.get("time"))
                 sample_value = sample.get("value")
                 if sample_time is None or sample_value is None or (since is not None and sample_time < since):
                     continue
-                heart_samples.append(
-                    {
-                        "time": iso_utc(sample_time),
-                        "value": sample_value,
-                        "attribution": record.attribution.get("state"),
-                    }
-                )
+                point = {
+                    "time": iso_utc(sample_time),
+                    "value": sample_value,
+                    "attribution": record.attribution.get("state"),
+                    "adapter": record.adapter_id,
+                }
+                heart_samples.append(point)
+                if record.adapter_id == "wear_health_services":
+                    direct_heart_samples.append(point)
         heart_samples.sort(key=lambda sample: sample["time"])
+        direct_heart_samples.sort(key=lambda sample: sample["time"])
         recent = self.store.watch_observations(limit=200)
         last_upload = self.store.latest_watch_sync()
         heart_summary = _numeric_point_stats(heart_samples)
-        heart_sync_summary = dict(heart_summary)
+        heart_sync_summary = _numeric_point_stats(direct_heart_samples)
         latest_heart = latest_payload.get("vitals.heart_rate")
-        if heart_sync_summary["last_at"] is None and latest_heart:
+        if heart_sync_summary["last_at"] is None and latest_heart and latest_heart.get("provenance", {}).get("adapter") == "wear_health_services":
             heart_sync_summary["last_at"] = latest_heart.get("observation_recency", {}).get("event_at")
         return {
             "enabled": self.config.watch_enabled,
@@ -404,7 +478,8 @@ class DashboardApp:
             "recent": [
                 {**item.public_dict(), "observation_recency": observation_recency(item, now)} for item in recent
             ],
-            "availability": [stored_availability[key] for key in sorted(stored_availability)],
+            "availability": merged_availability,
+            "availability_by_adapter": availability_by_adapter,
             "history": self.store.watch_history_overview(),
             "retention_days": self.config.watch_retention_days,
             "authoritative_source": "Samsung Health and Samsung Health Monitor remain authoritative for device features and official notices.",
@@ -449,21 +524,37 @@ class DashboardApp:
 
         try:
             batch = parse_json_strict(body)
-            validate_batch(batch, now)
+            schema_version = batch.get("schema_version")
+            association_reconciliations: list[dict[str, Any]] = []
+            if schema_version == SCHEMA_VERSION:
+                validate_batch(batch, now)
+                observations, deletions = batch_to_observations(batch, self.config.watch_identifier_key, now)
+                storage_batch = batch
+            elif schema_version == SCHEMA_VERSION_V2:
+                validate_batch_v2(batch, now)
+                if batch["adapter"]["id"] == "synthetic_test":
+                    raise WatchContractError("adapter_not_allowed", "Synthetic adapters are not accepted by the production endpoint.")
+                observations, deletions, association_reconciliations, storage_batch = batch_v2_to_observations(
+                    batch,
+                    self.config.watch_identifier_key,
+                    now,
+                )
+            else:
+                raise WatchContractError("upgrade_required", "The watch schema version is not supported.")
             if batch["batch_id"] != batch_id:
                 raise WatchContractError("batch_id_mismatch", "The signed batch identifier does not match the body.")
-            observations, deletions = batch_to_observations(batch, self.config.watch_identifier_key, now)
             installation_hash = keyed_hash(
                 self.config.watch_identifier_key,
                 f"installation|{batch['installation_id']}",
             )
             result = self.store.apply_watch_batch(
-                batch=batch,
+                batch=storage_batch,
                 body_sha256=body_sha256,
                 device_hash=device_hash,
                 installation_hash=installation_hash,
                 observations=observations,
                 deletions=deletions,
+                association_reconciliations=association_reconciliations,
                 now=now,
             )
             self.store.prune_watch_retention(self.config.watch_retention_days, now)
@@ -477,8 +568,9 @@ class DashboardApp:
             status = HTTPStatus.CONFLICT if exc.code == "upgrade_required" else HTTPStatus.BAD_REQUEST
             return status, {"error": exc.code, "retryable": exc.code == "upgrade_required"}
         except ValueError as exc:
-            code = "batch_id_conflict" if str(exc) == "batch_id_conflict" else "invalid_payload"
-            return HTTPStatus.CONFLICT if code == "batch_id_conflict" else HTTPStatus.BAD_REQUEST, {"error": code}
+            conflict_codes = {"batch_id_conflict", "identity_namespace_mismatch"}
+            code = str(exc) if str(exc) in conflict_codes else "invalid_payload"
+            return HTTPStatus.CONFLICT if code in conflict_codes else HTTPStatus.BAD_REQUEST, {"error": code}
 
     def dashboard(self, range_key: str) -> dict[str, Any]:
         if range_key not in RANGES:
@@ -585,7 +677,14 @@ class DashboardApp:
             self.config.near_threshold_margin_mg_dl,
         )
 
-        latest_heart = self.store.latest_watch_by_metric().get("vitals.heart_rate")
+        latest_heart = next(
+            (
+                observation
+                for observation in self.store.watch_observations(metric="vitals.heart_rate", limit=200)
+                if observation.adapter_id == "wear_health_services"
+            ),
+            None,
+        )
         heart_payload = None
         heart_last_at = None
         if latest_heart:
@@ -697,6 +796,14 @@ class DashboardApp:
                 "attribution_evidence",
                 "device_type",
                 "device_model",
+                "schema_version",
+                "adapter_id",
+                "adapter_version",
+                "identity_namespace_id",
+                "source_package",
+                "source_record_hash",
+                "association_hash",
+                "local_date",
                 "payload_json",
             ]
         )
@@ -718,6 +825,14 @@ class DashboardApp:
                     attribution.get("evidence", ""),
                     attribution.get("device_type", ""),
                     attribution.get("device_model", ""),
+                    observation.schema_version,
+                    observation.adapter_id,
+                    observation.adapter_version,
+                    observation.identity_namespace_id,
+                    observation.source_package,
+                    observation.source_record_hash,
+                    observation.association_hash or "",
+                    observation.local_date or "",
                     json.dumps(observation.payload, separators=(",", ":"), sort_keys=True),
                 ]
             )

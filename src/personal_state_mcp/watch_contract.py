@@ -491,6 +491,7 @@ def batch_to_observations(batch: dict[str, Any], identifier_key: str, now: datet
                 zone_offset=raw.get("zone_offset"),
                 start_zone_offset=raw.get("start_zone_offset"),
                 end_zone_offset=raw.get("end_zone_offset"),
+                adapter_id="wear_health_services" if raw["source_package"] == DIRECT_WEAR_PACKAGE else "android_health_connect",
             )
         )
     return observations, deletions
@@ -527,20 +528,24 @@ def observation_recency(observation: HealthObservation, now: datetime) -> dict[s
         status = "unknown"
         reason = "The observation timestamp is in the future."
     elif observation.metric == "vitals.heart_rate":
-        if age <= 900:
-            status, reason = "fresh", "Heart-rate sample is within 15 minutes."
-        elif age <= 7200:
-            status, reason = "recent", "Heart-rate sample is within 2 hours."
+        if observation.adapter_id == "wear_health_services" and age <= 60:
+            status, reason = "live", "Direct Wear heart rate was measured within the past minute."
+        elif age <= 900:
+            status, reason = "recent_record", "This heart-rate record is within 15 minutes but is not labeled live."
         else:
-            status, reason = "old", "Heart-rate sample is older than 2 hours."
-    elif observation.metric == "vitals.oxygen_saturation":
+            status, reason = "last_recorded", "This is the last recorded heart-rate value."
+    elif observation.metric in {"vitals.oxygen_saturation", "vitals.oxygen_saturation_series"}:
         status, reason = ("recent", "Oxygen sample is within 2 hours.") if age <= 7200 else ("latest_recorded", "This is the latest recorded oxygen sample.")
     elif observation.metric.startswith("activity.") and observation.metric != "activity.exercise_session":
         status, reason = ("recent", "Activity record is within 12 hours.") if age <= 43200 else ("latest_recorded", "This is the latest recorded activity value.")
     elif observation.metric == "activity.exercise_session":
         status, reason = ("recent", "Exercise session ended within 24 hours.") if age <= 86400 else ("latest_recorded", "This is the latest recorded exercise session.")
-    elif observation.metric == "sleep.session":
+    elif observation.metric in {"sleep.session", "sleep.samsung_session", "sleep.summary", "sleep.score"}:
         status, reason = ("recent", "Sleep session ended within 36 hours.") if age <= 129600 else ("latest_recorded", "This is the latest recorded sleep session.")
+    elif observation.metric == "wellness.energy_score":
+        status, reason = "latest_recorded", "This is Samsung's latest recorded Energy Score for its stated local date."
+    elif observation.metric in {"vitals.skin_temperature", "cardiac.irregular_rhythm_notification", "sleep.apnea_detected_sign"}:
+        status, reason = "latest_recorded", "This is the latest vendor-recorded result; it is never labeled live."
     else:
         status, reason = "latest_recorded", "This is the latest recorded value for this metric."
     return {

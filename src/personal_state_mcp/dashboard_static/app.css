@@ -662,6 +662,11 @@ tbody tr:hover { background: #f7faf8; }
 .coverage-state.permission_required, .coverage-state.companion_read_failed { color: #80530a; }
 .watch-recent-heading { margin-top: 32px; }
 .watch-table-shell { max-height: 390px; }
+.watch-availability-shell { max-height: 300px; }
+.vendor-finding-card { border-left: 4px solid #c65745; }
+.table-subtext { color: var(--muted); font-size: 11px; }
+.availability-state { display: inline-block; font-weight: 700; text-transform: capitalize; }
+.availability-state.is-stale { color: #a24636; }
 .watch-authority-band { background: #f7faf8; border-color: #b8d2c7; }
 .watch-authority-band svg { color: var(--green); }
 

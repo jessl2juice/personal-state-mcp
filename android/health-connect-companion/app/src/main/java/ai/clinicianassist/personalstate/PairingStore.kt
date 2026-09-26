@@ -18,6 +18,8 @@ data class PairingConfig(
     val deviceSecret: String,
     val accessClientId: String,
     val accessClientSecret: String,
+    val identityNamespaceId: String? = null,
+    val recordIdentityKey: String? = null,
 )
 
 class PairingStore(context: Context) {
@@ -26,9 +28,11 @@ class PairingStore(context: Context) {
 
     fun savePairing(json: String) {
         val parsed = JSONObject(json)
-        val expected = setOf("endpoint", "device_id", "device_secret", "cf_access_client_id", "cf_access_client_secret")
+        val required = setOf("endpoint", "device_id", "device_secret", "cf_access_client_id", "cf_access_client_secret")
+        val optional = setOf("identity_namespace_id", "record_identity_key")
         val keys = parsed.keys().asSequence().toSet()
-        require(keys == expected) { "Pairing file fields are invalid." }
+        require(keys.containsAll(required) && keys.all { it in required || it in optional }) { "Pairing file fields are invalid." }
+        require(("identity_namespace_id" in keys) == ("record_identity_key" in keys)) { "Pairing v2 identity fields must be supplied together." }
         val endpoint = parsed.getString("endpoint")
         require(endpoint.startsWith("https://") && endpoint.length <= 512) { "Pairing endpoint must use HTTPS." }
         val config = PairingConfig(
@@ -37,17 +41,23 @@ class PairingStore(context: Context) {
             deviceSecret = parsed.getString("device_secret"),
             accessClientId = parsed.getString("cf_access_client_id"),
             accessClientSecret = parsed.getString("cf_access_client_secret"),
+            identityNamespaceId = parsed.optString("identity_namespace_id").takeIf { it.isNotBlank() },
+            recordIdentityKey = parsed.optString("record_identity_key").takeIf { it.isNotBlank() },
         )
         require(config.deviceId.length in 8..128)
         require(config.deviceSecret.length in 24..512)
         require(config.accessClientId.length in 8..512)
         require(config.accessClientSecret.length in 8..512)
+        config.identityNamespaceId?.let { UUID.fromString(it) }
+        config.recordIdentityKey?.let { require(it.length in 40..512) }
         putEncrypted("pairing", JSONObject().apply {
             put("endpoint", config.endpoint)
             put("device_id", config.deviceId)
             put("device_secret", config.deviceSecret)
             put("cf_access_client_id", config.accessClientId)
             put("cf_access_client_secret", config.accessClientSecret)
+            config.identityNamespaceId?.let { put("identity_namespace_id", it) }
+            config.recordIdentityKey?.let { put("record_identity_key", it) }
         }.toString())
         if (getEncrypted("installation_id") == null) {
             putEncrypted("installation_id", UUID.randomUUID().toString().replace("-", "_"))
@@ -64,6 +74,8 @@ class PairingStore(context: Context) {
                 deviceSecret = parsed.getString("device_secret"),
                 accessClientId = parsed.getString("cf_access_client_id"),
                 accessClientSecret = parsed.getString("cf_access_client_secret"),
+                identityNamespaceId = parsed.optString("identity_namespace_id").takeIf { it.isNotBlank() },
+                recordIdentityKey = parsed.optString("record_identity_key").takeIf { it.isNotBlank() },
             )
         }.getOrNull()
     }
