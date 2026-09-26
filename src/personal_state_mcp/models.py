@@ -154,6 +154,11 @@ class HealthObservation:
     attribution: dict[str, Any]
     installation_hash: str
     source_record_hash: str
+    adapter_id: str = "android_health_connect"
+    adapter_version: str = "legacy-v1"
+    identity_namespace_id: str = "legacy-v1"
+    association_hash: str | None = None
+    local_date: str | None = None
     measured_at: datetime | None = None
     start_at: datetime | None = None
     end_at: datetime | None = None
@@ -183,6 +188,7 @@ class HealthObservation:
             "measured_at": iso_utc(self.measured_at),
             "start_at": iso_utc(self.start_at),
             "end_at": iso_utc(self.end_at),
+            "local_date": self.local_date,
             "observed_by_companion_at": iso_utc(self.observed_by_companion_at),
             "ingested_at_server": iso_utc(self.ingested_at_server),
             "upstream_last_modified_at": iso_utc(self.upstream_last_modified_at),
@@ -190,14 +196,19 @@ class HealthObservation:
             "start_zone_offset": self.start_zone_offset,
             "end_zone_offset": self.end_zone_offset,
             "provenance": {
-                "adapter": "android_health_connect",
+                "adapter": self.adapter_id,
+                "adapter_version": self.adapter_version,
                 "vendor": "Samsung",
-                "source": "Samsung Health via Health Connect",
+                "source": "Samsung Health Data SDK" if self.adapter_id == "android_samsung_health_data" else (
+                    "Direct Wear OS Health Services" if self.adapter_id == "wear_health_services" else "Samsung Health via Health Connect"
+                ),
                 "source_package": self.source_package,
                 "recording_method": self.recording_method,
                 "attribution": self.attribution,
                 "installation_hash": self.installation_hash,
                 "source_record_hash": self.source_record_hash,
+                "identity_namespace_id": self.identity_namespace_id,
+                "association_hash": self.association_hash,
             },
             "schema_version": self.schema_version,
         }
@@ -224,6 +235,11 @@ class HealthObservation:
             self.start_zone_offset,
             self.end_zone_offset,
             self.schema_version,
+            self.adapter_id,
+            self.adapter_version,
+            self.identity_namespace_id,
+            self.association_hash,
+            self.local_date,
         )
 
 @dataclass(frozen=True)

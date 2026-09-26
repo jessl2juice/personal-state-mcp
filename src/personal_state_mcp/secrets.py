@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import getpass
 import os
+import secrets
+from uuid import uuid4
 
 
 SERVICE_NAME = "personal-state-mcp"
@@ -72,6 +74,24 @@ def set_watch_secrets(device_id: str, device_secret: str, identifier_key: str) -
     keyring.set_password(SERVICE_NAME, "watch-identifier-key", identifier_key)
 
 
+def get_or_create_watch_record_identity() -> tuple[str, str]:
+    try:
+        import keyring  # type: ignore
+    except Exception as exc:
+        raise SecretError("The optional keyring package is required to store watch identity secrets.") from exc
+    namespace = keyring.get_password(SERVICE_NAME, "watch-record-identity-namespace")
+    identity_key = keyring.get_password(SERVICE_NAME, "watch-record-identity-key")
+    if namespace and identity_key:
+        return namespace, identity_key
+    if namespace or identity_key:
+        raise SecretError("The stored watch record identity is incomplete; explicit recovery is required.")
+    namespace = str(uuid4())
+    identity_key = secrets.token_urlsafe(32)
+    keyring.set_password(SERVICE_NAME, "watch-record-identity-namespace", namespace)
+    keyring.set_password(SERVICE_NAME, "watch-record-identity-key", identity_key)
+    return namespace, identity_key
+
+
 def delete_watch_secrets(device_id: str, *, missing_ok: bool = False) -> None:
     try:
         import keyring  # type: ignore
@@ -79,6 +99,8 @@ def delete_watch_secrets(device_id: str, *, missing_ok: bool = False) -> None:
         raise SecretError("The optional keyring package is required to delete watch secrets.") from exc
     _delete_password(keyring, f"watch-device:{device_id}", missing_ok=missing_ok)
     _delete_password(keyring, "watch-identifier-key", missing_ok=missing_ok)
+    _delete_password(keyring, "watch-record-identity-namespace", missing_ok=missing_ok)
+    _delete_password(keyring, "watch-record-identity-key", missing_ok=missing_ok)
 
 
 def get_watch_access_credentials(device_id: str) -> tuple[str, str] | None:

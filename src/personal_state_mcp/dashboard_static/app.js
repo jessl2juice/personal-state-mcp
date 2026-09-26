@@ -36,9 +36,19 @@
     "activity.vo2_max": "VO2 max",
     "vitals.heart_rate": "Heart rate",
     "vitals.oxygen_saturation": "Blood oxygen",
+    "vitals.oxygen_saturation_series": "Blood oxygen during sleep",
     "vitals.blood_pressure": "Blood pressure",
     "vitals.blood_glucose": "Samsung Health glucose",
     "sleep.session": "Sleep",
+    "sleep.samsung_session": "Samsung sleep session",
+    "sleep.summary": "Samsung sleep summary",
+    "sleep.score": "Samsung sleep score",
+    "sleep.apnea_detected_sign": "Samsung Health Monitor detected sign",
+    "vitals.skin_temperature": "Skin temperature",
+    "wellness.energy_score": "Samsung Energy Score",
+    "cardiac.irregular_rhythm_notification": "Samsung irregular-rhythm notification",
+    "activity.floors": "Floors",
+    "activity.active_time": "Active time",
     "body.weight": "Weight",
     "body.body_fat": "Body fat",
     "body.basal_metabolic_rate": "Basal metabolic rate",
@@ -48,7 +58,17 @@
   const watchMetricOrder = [
     "vitals.heart_rate",
     "vitals.oxygen_saturation",
+    "vitals.oxygen_saturation_series",
+    "vitals.skin_temperature",
+    "wellness.energy_score",
+    "sleep.score",
+    "sleep.summary",
+    "sleep.samsung_session",
+    "sleep.apnea_detected_sign",
+    "cardiac.irregular_rhythm_notification",
     "activity.steps",
+    "activity.active_time",
+    "activity.floors",
     "sleep.session",
     "activity.distance",
     "activity.exercise_calories",
@@ -375,6 +395,16 @@
     return labels[state] || "Source unavailable";
   }
 
+  function adapterLabel(observation) {
+    const adapter = observation?.provenance?.adapter;
+    const labels = {
+      android_samsung_health_data: "Samsung Health Data SDK",
+      android_health_connect: "Samsung Health via Health Connect",
+      wear_health_services: "Direct Galaxy Watch",
+    };
+    return labels[adapter] || adapter || "Source unavailable";
+  }
+
   function observationTime(observation) {
     return observation?.measured_at || observation?.end_at || observation?.start_at || null;
   }
@@ -388,12 +418,24 @@
   function watchMetricPresentation(metric, observation) {
     const payload = observation?.payload || {};
     const lastSample = Array.isArray(payload.samples) && payload.samples.length ? payload.samples[payload.samples.length - 1] : null;
-    if (metric === "sleep.session") {
+    if (["sleep.session", "sleep.samsung_session", "sleep.summary"].includes(metric)) {
       const hours = observation?.start_at && observation?.end_at
         ? (new Date(observation.end_at) - new Date(observation.start_at)) / 3600000
         : null;
       return { value: hours === null ? "Recorded" : readableNumber(hours), unit: hours === null ? "" : "hours" };
     }
+    if (metric === "cardiac.irregular_rhythm_notification") {
+      return { value: payload.status === "detected" ? "Detected" : "Undefined", unit: "" };
+    }
+    if (metric === "sleep.apnea_detected_sign") {
+      const labels = { detected: "Detected", not_detected: "Not detected", undefined: "Undefined" };
+      return { value: labels[payload.status] || "No recorded result", unit: "" };
+    }
+    if (["sleep.score", "wellness.energy_score"].includes(metric)) {
+      return { value: readableNumber(payload.value, 0), unit: metric === "wellness.energy_score" ? "score" : "/ 100" };
+    }
+    if (metric === "activity.floors") return { value: readableNumber(payload.value, 0), unit: "floors" };
+    if (metric === "activity.active_time") return { value: readableNumber(payload.value, 0), unit: "minutes" };
     if (metric === "activity.distance" && payload.unit === "m") {
       const meters = Number(payload.value);
       return meters >= 1000
@@ -427,12 +469,14 @@
       const presentation = watchMetricPresentation(metric, observation);
       const age = formatAge(observation.observation_recency?.measurement_age_seconds);
       const label = metric === "activity.steps" ? "Latest steps record" : (watchMetricLabels[metric] || metric);
+      const finding = ["cardiac.irregular_rhythm_notification", "sleep.apnea_detected_sign"].includes(metric);
+      const eventLabel = observation.local_date || formatDate(observationTime(observation));
       return `
-        <article class="metric-card health-metric-card">
+        <article class="metric-card health-metric-card ${finding ? "vendor-finding-card" : ""}">
           <span>${escapeHtml(label)}</span>
           <strong>${escapeHtml(presentation.value)}</strong>${presentation.unit ? `<small>${escapeHtml(presentation.unit)}</small>` : ""}
-          <p class="metric-meta">${escapeHtml(attributionLabel(observation))}</p>
-          <p class="metric-time">${escapeHtml(formatDate(observationTime(observation)))} | ${escapeHtml(age)}</p>
+          <p class="metric-meta">${escapeHtml(adapterLabel(observation))}</p>
+          <p class="metric-time">${escapeHtml(eventLabel)} | ${escapeHtml(age)}</p>
         </article>
       `;
     }).join("");
@@ -472,12 +516,23 @@
           <td>${escapeHtml(formatDate(observationTime(observation)))}</td>
           <td>${escapeHtml(watchMetricLabels[observation.metric] || observation.metric)}</td>
           <td class="value-cell">${escapeHtml(presentation.value)} ${escapeHtml(presentation.unit)}</td>
-          <td>${escapeHtml(attributionLabel(observation))}</td>
+          <td><strong>${escapeHtml(adapterLabel(observation))}</strong><br><span class="table-subtext">${escapeHtml(attributionLabel(observation))}</span></td>
           <td>${escapeHtml(formatDate(observation.observed_by_companion_at))}</td>
           <td>${escapeHtml(formatDate(observation.ingested_at_server))}</td>
         </tr>
       `;
     }).join("") : '<tr><td colspan="6">No watch observations uploaded yet.</td></tr>';
+
+    const availabilityBody = $("#watch-availability-body");
+    const availability = watch.availability_by_adapter || [];
+    availabilityBody.innerHTML = availability.length ? availability.map((item) => `
+      <tr>
+        <td>${escapeHtml(watchMetricLabels[item.metric] || item.metric)}</td>
+        <td>${escapeHtml(({ android_samsung_health_data: "Samsung Health Data SDK", android_health_connect: "Health Connect", wear_health_services: "Direct Galaxy Watch" })[item.adapter_id] || item.adapter_id)}</td>
+        <td><span class="availability-state ${item.stale ? "is-stale" : ""}">${escapeHtml(String(item.state || "unknown").replaceAll("_", " "))}</span></td>
+        <td>${escapeHtml(item.checked_at_utc ? formatDate(item.checked_at_utc) : "No report")}</td>
+      </tr>
+    `).join("") : '<tr><td colspan="4">No active companion coverage reports yet.</td></tr>';
   }
 
   function smoothSegmentForDisplay(series, radius) {

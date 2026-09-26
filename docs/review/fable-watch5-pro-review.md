@@ -393,3 +393,22 @@ The corrections introduce no concrete new P0/P1 defect.
 **APPROVED FOR SYNTHETIC IMPLEMENTATION ONLY**
 
 Real health data, Android permission grants, device credentials, at-rest risk acceptance, and Cloudflare service credentials remain separately gated. They must not be provisioned until synthetic implementation and its required security, contract, privacy, migration, and end-to-end tests pass, followed by the applicable explicit user approvals.
+
+## Final Gate Verification
+
+Date: 2026-09-26
+
+Re-verification was limited to the four remaining P1 corrections identified in the Final Re-review:
+
+- The normative schema now makes timing fields exclusive by record kind. Point/composite records require `measured_at` and reject interval timing/offset fields; interval/series/session/aggregate records require `start_at` and `end_at` and reject point timing/offset fields. Valid point and interval examples pass schema validation, while mixed-field examples fail.
+- Revision 2.1 explicitly states that original-unit metadata is not retained; only the canonical typed value is persisted.
+- Dashboard wording now distinguishes the last successful companion Health Connect read from the last successful server upload and explicitly leaves Samsung/watch synchronization status unknown.
+- The resolution log identifies revision 2.1 and lists limits consistent with the normative contract. The obsolete 64 KiB `details` claim is absent.
+
+No correction creates a concrete new P0 or P1 defect. Previously resolved items were not reopened.
+
+### Final Gate
+
+**APPROVED FOR SYNTHETIC IMPLEMENTATION ONLY**
+
+Real health data, Android permission grants, device credentials, at-rest risk acceptance, and Cloudflare service credentials remain separately gated pending successful synthetic security, contract, privacy, migration, and end-to-end verification plus the applicable explicit user approvals.

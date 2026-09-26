@@ -84,6 +84,22 @@ class HealthConnectSync(
                 failed += "${spec.metric} (${error::class.simpleName}: $reason)"
             }
         }
+        pairing.identityNamespaceId?.let { namespace ->
+            try {
+                val unavailable = SamsungHealthDataUnavailableAdapter().collect()
+                uploader.upload(
+                    pairing,
+                    SamsungAvailabilityBatch(
+                        installationId = store.installationId(),
+                        identityNamespaceId = namespace,
+                        availability = unavailable.availability,
+                    ),
+                )
+            } catch (error: Exception) {
+                val reason = error.message?.replace(Regex("\\s+"), " ")?.take(140) ?: "no message"
+                failed += "Samsung Health Data adapter status (${error::class.simpleName}: $reason)"
+            }
+        }
         val result = "${Instant.now()} | $uploaded changes uploaded${if (failed.isNotEmpty()) "; retry: ${failed.joinToString()}" else ""}"
         store.setStatus(result)
         return result

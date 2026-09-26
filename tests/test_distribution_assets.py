@@ -41,7 +41,7 @@ def test_wear_build_is_non_standalone_and_watch_only() -> None:
 def test_private_artifact_types_are_ignored() -> None:
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
 
-    for pattern in ("*.db", "*.jsonl", "*.apk", "*.jks", "*pairing*.json", "settings.psd1"):
+    for pattern in ("*.db", "*.jsonl", "*.apk", "*.aar", "*.jks", "*pairing*.json", "settings.psd1"):
         assert pattern in ignore
 
 

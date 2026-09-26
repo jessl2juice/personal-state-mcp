@@ -5,6 +5,11 @@ import org.json.JSONObject
 import java.time.Instant
 import java.util.UUID
 
+interface UploadBatch {
+    val batchId: String
+    fun bytes(): ByteArray
+}
+
 data class AvailabilityReport(
     val metric: String,
     val state: String,
@@ -38,8 +43,8 @@ data class WatchBatch(
     val changes: List<JSONObject>,
     val availability: List<AvailabilityReport>,
     val generatedAt: Instant = Instant.now(),
-    val batchId: String = UUID.randomUUID().toString(),
-) {
+    override val batchId: String = UUID.randomUUID().toString(),
+) : UploadBatch {
     fun toJson(): JSONObject = JSONObject().apply {
         put("schema_version", "personal-state-watch-batch/v1")
         put("batch_id", batchId)
@@ -49,7 +54,7 @@ data class WatchBatch(
         put("availability", JSONArray(availability.map { it.toJson() }))
     }
 
-    fun bytes(): ByteArray = toJson().toString().toByteArray(Charsets.UTF_8)
+    override fun bytes(): ByteArray = toJson().toString().toByteArray(Charsets.UTF_8)
 }
 
 fun upsert(observation: JSONObject): JSONObject = JSONObject().apply {

@@ -10,7 +10,7 @@ import javax.crypto.spec.SecretKeySpec
 import javax.net.ssl.HttpsURLConnection
 
 class UploadClient {
-    suspend fun upload(config: PairingConfig, batch: WatchBatch): Boolean = withContext(Dispatchers.IO) {
+    suspend fun upload(config: PairingConfig, batch: UploadBatch): Boolean = withContext(Dispatchers.IO) {
         val body = batch.bytes()
         require(body.size <= 1024 * 1024) { "Batch exceeds the server contract." }
         val endpoint = URL(config.endpoint)

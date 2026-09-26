@@ -40,6 +40,9 @@ The original detailed design, independent Fable review, resolution logs, and nor
 - [Resolution log](review/resolution-log.md)
 - [Watch5 Pro resolution log](review/watch5-pro-resolution-log.md)
 - [Watch ingest schema v1](watch-ingest-schema-v1.json)
+- [Samsung Health Data adapter design](samsung-health-data-adapter-design.md)
+- [Samsung Health Data review resolution log](review/samsung-health-data-resolution-log.md)
+- [Watch ingest schema v2](watch-ingest-schema-v2.json)
 
 ## Audience map
 

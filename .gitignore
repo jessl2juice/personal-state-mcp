@@ -33,6 +33,7 @@ android/**/build/
 android/**/local.properties
 *.apk
 *.aab
+*.aar
 
 # Private device screenshots captured during development
 /*.png

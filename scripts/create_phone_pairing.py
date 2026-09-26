@@ -9,6 +9,7 @@ from pathlib import Path
 from personal_state_mcp.secrets import (
     get_watch_access_credentials,
     get_watch_device_secret,
+    get_or_create_watch_record_identity,
     set_watch_access_credentials,
 )
 
@@ -22,6 +23,11 @@ def main() -> None:
         "--replace-access-credential",
         action="store_true",
         help="Prompt for and replace the Cloudflare Access credential in the OS keychain.",
+    )
+    parser.add_argument(
+        "--schema-v2",
+        action="store_true",
+        help="Include the stable Samsung record-identity namespace and key for a v2-capable companion.",
     )
     args = parser.parse_args()
 
@@ -50,6 +56,10 @@ def main() -> None:
         "cf_access_client_id": client_id,
         "cf_access_client_secret": client_secret,
     }
+    if args.schema_v2:
+        namespace, record_identity_key = get_or_create_watch_record_identity()
+        payload["identity_namespace_id"] = namespace
+        payload["record_identity_key"] = record_identity_key
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     try:

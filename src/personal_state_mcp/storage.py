@@ -133,6 +133,35 @@ CREATE INDEX IF NOT EXISTS idx_watch_nonce_time ON watch_replay_nonces(seen_at_u
 """
 
 
+WATCH_SCHEMA_V3 = """
+CREATE TABLE IF NOT EXISTS health_association_members (
+    identity_namespace_id TEXT NOT NULL,
+    adapter_id TEXT NOT NULL,
+    association_hash TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    source_record_hash TEXT NOT NULL,
+    observation_id TEXT NOT NULL,
+    PRIMARY KEY (identity_namespace_id, adapter_id, association_hash, metric, source_record_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_health_association_observation ON health_association_members(observation_id);
+
+CREATE TABLE IF NOT EXISTS health_associations (
+    identity_namespace_id TEXT NOT NULL,
+    adapter_id TEXT NOT NULL,
+    association_hash TEXT NOT NULL,
+    changed_at_utc TEXT NOT NULL,
+    PRIMARY KEY (identity_namespace_id, adapter_id, association_hash)
+);
+
+CREATE TABLE IF NOT EXISTS watch_active_installations (
+    device_hash TEXT PRIMARY KEY,
+    installation_hash TEXT NOT NULL,
+    identity_namespace_id TEXT,
+    activated_at_utc TEXT NOT NULL
+);
+"""
+
+
 def _parse_dt(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
@@ -172,6 +201,100 @@ class StateStore:
                 )
             else:
                 conn.executescript(WATCH_SCHEMA)
+            applied_v3 = conn.execute("SELECT 1 FROM schema_migrations WHERE version = 3").fetchone()
+            if not applied_v3:
+                conn.commit()
+                if existed:
+                    backup = self.path.with_suffix(self.path.suffix + ".pre-samsung-v3.bak")
+                    if not backup.exists():
+                        shutil.copy2(self.path, backup)
+                observation_columns = {
+                    row[1] for row in conn.execute("PRAGMA table_info(health_observations)").fetchall()
+                }
+                for name, declaration in (
+                    ("adapter_id", "TEXT NOT NULL DEFAULT 'android_health_connect'"),
+                    ("adapter_version", "TEXT NOT NULL DEFAULT 'legacy-v1'"),
+                    ("identity_namespace_id", "TEXT NOT NULL DEFAULT 'legacy-v1'"),
+                    ("association_hash", "TEXT"),
+                    ("local_date", "TEXT"),
+                ):
+                    if name not in observation_columns:
+                        conn.execute(f"ALTER TABLE health_observations ADD COLUMN {name} {declaration}")
+                conn.execute(
+                    "UPDATE health_observations SET adapter_id='wear_health_services' "
+                    "WHERE source_package='ai.clinicianassist.personalstate'"
+                )
+                conn.executescript(
+                    """
+                    CREATE TABLE health_tombstones_v3 (
+                        identity_namespace_id TEXT NOT NULL,
+                        adapter_id TEXT NOT NULL,
+                        observation_id TEXT NOT NULL,
+                        metric TEXT NOT NULL,
+                        source_record_hash TEXT NOT NULL,
+                        upstream_last_modified_at_utc TEXT,
+                        deleted_at_utc TEXT NOT NULL,
+                        expires_at_utc TEXT NOT NULL,
+                        PRIMARY KEY (identity_namespace_id, adapter_id, observation_id)
+                    );
+                    INSERT INTO health_tombstones_v3 (
+                        identity_namespace_id, adapter_id, observation_id, metric,
+                        source_record_hash, upstream_last_modified_at_utc, deleted_at_utc, expires_at_utc
+                    )
+                    SELECT 'legacy-v1', 'android_health_connect', observation_id, metric,
+                           source_record_hash, upstream_last_modified_at_utc, deleted_at_utc, expires_at_utc
+                    FROM health_tombstones;
+                    DROP TABLE health_tombstones;
+                    ALTER TABLE health_tombstones_v3 RENAME TO health_tombstones;
+                    """
+                )
+                sync_columns = {
+                    row[1] for row in conn.execute("PRAGMA table_info(device_sync_runs)").fetchall()
+                }
+                for name, declaration in (
+                    ("adapter_id", "TEXT NOT NULL DEFAULT 'android_health_connect'"),
+                    ("adapter_version", "TEXT NOT NULL DEFAULT 'legacy-v1'"),
+                    ("identity_namespace_id", "TEXT NOT NULL DEFAULT 'legacy-v1'"),
+                ):
+                    if name not in sync_columns:
+                        conn.execute(f"ALTER TABLE device_sync_runs ADD COLUMN {name} {declaration}")
+                conn.executescript(
+                    """
+                    CREATE TABLE watch_availability_v3 (
+                        installation_hash TEXT NOT NULL,
+                        adapter_id TEXT NOT NULL,
+                        adapter_version TEXT NOT NULL,
+                        identity_namespace_id TEXT NOT NULL,
+                        metric TEXT NOT NULL,
+                        state TEXT NOT NULL,
+                        evidence TEXT NOT NULL,
+                        checked_at_utc TEXT NOT NULL,
+                        coverage_json TEXT NOT NULL,
+                        PRIMARY KEY (installation_hash, adapter_id, metric)
+                    );
+                    INSERT INTO watch_availability_v3 (
+                        installation_hash, adapter_id, adapter_version, identity_namespace_id,
+                        metric, state, evidence, checked_at_utc, coverage_json
+                    )
+                    SELECT installation_hash, 'android_health_connect', 'legacy-v1', 'legacy-v1',
+                           metric, state, evidence, checked_at_utc, coverage_json
+                    FROM watch_availability;
+                    DROP TABLE watch_availability;
+                    ALTER TABLE watch_availability_v3 RENAME TO watch_availability;
+                    """
+                )
+                conn.executescript(WATCH_SCHEMA_V3)
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, applied_at_utc) VALUES (?, ?)",
+                    (3, iso_utc(utc_now())),
+                )
+            else:
+                conn.executescript(WATCH_SCHEMA_V3)
+            active_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(watch_active_installations)").fetchall()
+            }
+            if "identity_namespace_id" not in active_columns:
+                conn.execute("ALTER TABLE watch_active_installations ADD COLUMN identity_namespace_id TEXT")
             conn.commit()
         finally:
             conn.close()
@@ -392,6 +515,7 @@ class StateStore:
         installation_hash: str,
         observations: list[HealthObservation],
         deletions: list[dict[str, Any]],
+        association_reconciliations: list[dict[str, Any]] | None = None,
         now: datetime,
     ) -> dict[str, Any]:
         counts = {"inserted": 0, "updated": 0, "deleted": 0, "ignored": 0}
@@ -408,11 +532,27 @@ class StateStore:
                     "ignored": int(prior["observations_ignored"]),
                 }
 
+            incoming_namespace = batch.get("identity_namespace_id")
+            active_installation = conn.execute(
+                "SELECT identity_namespace_id FROM watch_active_installations WHERE device_hash=?",
+                (device_hash,),
+            ).fetchone()
+            if (
+                incoming_namespace
+                and active_installation
+                and active_installation["identity_namespace_id"]
+                and active_installation["identity_namespace_id"] != incoming_namespace
+            ):
+                raise ValueError("identity_namespace_mismatch")
+
             conn.execute("DELETE FROM health_tombstones WHERE expires_at_utc < ?", (iso_utc(now),))
             for observation in observations:
                 tombstone = conn.execute(
-                    "SELECT upstream_last_modified_at_utc FROM health_tombstones WHERE observation_id = ?",
-                    (observation.id,),
+                    """
+                    SELECT upstream_last_modified_at_utc FROM health_tombstones
+                    WHERE identity_namespace_id=? AND adapter_id=? AND observation_id=?
+                    """,
+                    (observation.identity_namespace_id, observation.adapter_id, observation.id),
                 ).fetchone()
                 incoming_version = iso_utc(observation.upstream_last_modified_at or observation.observed_by_companion_at)
                 if tombstone and (tombstone["upstream_last_modified_at_utc"] or "") >= (incoming_version or ""):
@@ -434,7 +574,8 @@ class StateStore:
                             end_at_utc=?, observed_by_companion_at_utc=?, ingested_at_server_utc=?,
                             upstream_last_modified_at_utc=?, source_package=?, recording_method=?, attribution_json=?,
                             installation_hash=?, source_record_hash=?, zone_offset=?, start_zone_offset=?,
-                            end_zone_offset=?, schema_version=?
+                            end_zone_offset=?, schema_version=?, adapter_id=?, adapter_version=?,
+                            identity_namespace_id=?, association_hash=?, local_date=?
                         WHERE id=?
                         """,
                         observation.persistence_tuple()[1:] + (observation.id,),
@@ -448,8 +589,9 @@ class StateStore:
                             end_at_utc, observed_by_companion_at_utc, ingested_at_server_utc,
                             upstream_last_modified_at_utc, source_package, recording_method, attribution_json,
                             installation_hash, source_record_hash, zone_offset, start_zone_offset, end_zone_offset,
-                            schema_version
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            schema_version, adapter_id, adapter_version, identity_namespace_id,
+                            association_hash, local_date
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         observation.persistence_tuple(),
                     )
@@ -460,7 +602,11 @@ class StateStore:
                     "SELECT upstream_last_modified_at_utc, observed_by_companion_at_utc FROM health_observations WHERE id = ?",
                     (deletion["id"],),
                 ).fetchone()
-                delete_version = deletion["upstream_last_modified_at"] or iso_utc(now)
+                delete_version = (
+                    iso_utc(_parse_dt(deletion["upstream_last_modified_at"]))
+                    if deletion["upstream_last_modified_at"]
+                    else iso_utc(now)
+                )
                 if existing:
                     existing_version = existing["upstream_last_modified_at_utc"] or existing["observed_by_companion_at_utc"]
                     if existing_version > delete_version:
@@ -472,9 +618,9 @@ class StateStore:
                     """
                     INSERT INTO health_tombstones (
                         observation_id, metric, source_record_hash, upstream_last_modified_at_utc,
-                        deleted_at_utc, expires_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(observation_id) DO UPDATE SET
+                        deleted_at_utc, expires_at_utc, adapter_id, identity_namespace_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(identity_namespace_id, adapter_id, observation_id) DO UPDATE SET
                         upstream_last_modified_at_utc=excluded.upstream_last_modified_at_utc,
                         deleted_at_utc=excluded.deleted_at_utc,
                         expires_at_utc=excluded.expires_at_utc
@@ -482,16 +628,104 @@ class StateStore:
                     (
                         deletion["id"], deletion["metric"], deletion["source_record_hash"], delete_version,
                         iso_utc(now), iso_utc(now + timedelta(days=30)),
+                        deletion.get("adapter_id", "android_health_connect"),
+                        deletion.get("identity_namespace_id", "legacy-v1"),
                     ),
                 )
 
+            for reconciliation in association_reconciliations or []:
+                key = (
+                    reconciliation["identity_namespace_id"],
+                    reconciliation["adapter_id"],
+                    reconciliation["association_hash"],
+                )
+                changed_at = iso_utc(_parse_dt(reconciliation["changed_at"]))
+                prior_association = conn.execute(
+                    """
+                    SELECT changed_at_utc FROM health_associations
+                    WHERE identity_namespace_id=? AND adapter_id=? AND association_hash=?
+                    """,
+                    key,
+                ).fetchone()
+                if prior_association and prior_association["changed_at_utc"] >= changed_at:
+                    counts["ignored"] += 1
+                    continue
+                existing_members = conn.execute(
+                    """
+                    SELECT metric, source_record_hash, observation_id
+                    FROM health_association_members
+                    WHERE identity_namespace_id=? AND adapter_id=? AND association_hash=?
+                    """,
+                    key,
+                ).fetchall()
+                current = {
+                    (item["metric"], item["source_record_hash"]): item["observation_id"]
+                    for item in reconciliation["members"]
+                }
+                for member in existing_members:
+                    member_key = (member["metric"], member["source_record_hash"])
+                    if member_key in current:
+                        continue
+                    if conn.execute("SELECT 1 FROM health_observations WHERE id=?", (member["observation_id"],)).fetchone():
+                        conn.execute("DELETE FROM health_observations WHERE id=?", (member["observation_id"],))
+                        counts["deleted"] += 1
+                    conn.execute(
+                        """
+                        INSERT INTO health_tombstones (
+                            observation_id, metric, source_record_hash, upstream_last_modified_at_utc,
+                            deleted_at_utc, expires_at_utc, adapter_id, identity_namespace_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(identity_namespace_id, adapter_id, observation_id) DO UPDATE SET
+                            upstream_last_modified_at_utc=excluded.upstream_last_modified_at_utc,
+                            deleted_at_utc=excluded.deleted_at_utc,
+                            expires_at_utc=excluded.expires_at_utc
+                        """,
+                        (
+                            member["observation_id"], member["metric"], member["source_record_hash"],
+                            changed_at, iso_utc(now), iso_utc(now + timedelta(days=30)),
+                            reconciliation["adapter_id"], reconciliation["identity_namespace_id"],
+                        ),
+                    )
+                conn.execute(
+                    "DELETE FROM health_association_members WHERE identity_namespace_id=? AND adapter_id=? AND association_hash=?",
+                    key,
+                )
+                for item in reconciliation["members"]:
+                    if not conn.execute("SELECT 1 FROM health_observations WHERE id=?", (item["observation_id"],)).fetchone():
+                        raise ValueError("association_member_missing")
+                    conn.execute(
+                        """
+                        INSERT INTO health_association_members (
+                            identity_namespace_id, adapter_id, association_hash, metric,
+                            source_record_hash, observation_id
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        key + (item["metric"], item["source_record_hash"], item["observation_id"]),
+                    )
+                conn.execute(
+                    """
+                    INSERT INTO health_associations (
+                        identity_namespace_id, adapter_id, association_hash, changed_at_utc
+                    ) VALUES (?, ?, ?, ?)
+                    ON CONFLICT(identity_namespace_id, adapter_id, association_hash) DO UPDATE SET
+                        changed_at_utc=excluded.changed_at_utc
+                    """,
+                    key + (changed_at,),
+                )
+
+            batch_adapter = batch.get("adapter") or {"id": "android_health_connect", "version": "legacy-v1"}
+            identity_namespace_id = batch.get("identity_namespace_id", "legacy-v1")
             for item in batch["availability"]:
+                item_adapter = item.get("adapter", batch_adapter)
                 conn.execute(
                     """
                     INSERT INTO watch_availability (
-                        installation_hash, metric, state, evidence, checked_at_utc, coverage_json
-                    ) VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(installation_hash, metric) DO UPDATE SET
+                        installation_hash, adapter_id, adapter_version, identity_namespace_id,
+                        metric, state, evidence, checked_at_utc, coverage_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(installation_hash, adapter_id, metric) DO UPDATE SET
+                        adapter_version=excluded.adapter_version,
+                        identity_namespace_id=excluded.identity_namespace_id,
                         state=excluded.state,
                         evidence=excluded.evidence,
                         checked_at_utc=excluded.checked_at_utc,
@@ -500,6 +734,9 @@ class StateStore:
                     """,
                     (
                         installation_hash,
+                        item_adapter["id"],
+                        item_adapter["version"],
+                        identity_namespace_id,
                         item["metric"],
                         item["state"],
                         item["evidence"],
@@ -510,18 +747,32 @@ class StateStore:
 
             conn.execute(
                 """
+                INSERT INTO watch_active_installations (
+                    device_hash, installation_hash, identity_namespace_id, activated_at_utc
+                ) VALUES (?, ?, ?, ?)
+                ON CONFLICT(device_hash) DO UPDATE SET
+                    installation_hash=excluded.installation_hash,
+                    identity_namespace_id=COALESCE(excluded.identity_namespace_id, watch_active_installations.identity_namespace_id),
+                    activated_at_utc=excluded.activated_at_utc
+                """,
+                (device_hash, installation_hash, incoming_namespace, iso_utc(now)),
+            )
+
+            conn.execute(
+                """
                 INSERT INTO device_sync_runs (
                     batch_id, body_sha256, device_hash, installation_hash, generated_at_utc,
                     received_at_utc, status, changes_seen, observations_inserted,
                     observations_updated, observations_deleted, observations_ignored,
-                    availability_count, error_code
-                ) VALUES (?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, NULL)
+                    availability_count, error_code, adapter_id, adapter_version, identity_namespace_id
+                ) VALUES (?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
                 """,
                 (
                     batch["batch_id"], body_sha256, device_hash, installation_hash,
                     batch["generated_at"], iso_utc(now), len(batch["changes"]),
                     counts["inserted"], counts["updated"], counts["deleted"], counts["ignored"],
                     len(batch["availability"]),
+                    batch_adapter["id"], batch_adapter["version"], identity_namespace_id,
                 ),
             )
         return {"status": "ok", **counts}
@@ -575,13 +826,18 @@ class StateStore:
 
     def watch_availability(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
-            rows = conn.execute("SELECT * FROM watch_availability ORDER BY metric").fetchall()
+            rows = conn.execute("SELECT * FROM watch_availability ORDER BY metric, adapter_id").fetchall()
         result = []
         for row in rows:
             item = dict(row)
             item["coverage"] = json.loads(item.pop("coverage_json"))
             result.append(item)
         return result
+
+    def active_watch_installation_hashes(self) -> set[str]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT installation_hash FROM watch_active_installations").fetchall()
+        return {str(row["installation_hash"]) for row in rows}
 
     def watch_history_overview(self) -> dict[str, Any]:
         with self.connect() as conn:
@@ -604,6 +860,9 @@ class StateStore:
                 conn.execute("DELETE FROM watch_availability")
                 conn.execute("DELETE FROM device_sync_runs")
                 conn.execute("DELETE FROM watch_replay_nonces")
+                conn.execute("DELETE FROM health_association_members")
+                conn.execute("DELETE FROM health_associations")
+                conn.execute("DELETE FROM watch_active_installations")
                 return count
             cutoff = iso_utc(before)
             count = int(conn.execute(
@@ -667,4 +926,9 @@ class StateStore:
             start_zone_offset=row["start_zone_offset"],
             end_zone_offset=row["end_zone_offset"],
             schema_version=row["schema_version"],
+            adapter_id=row["adapter_id"],
+            adapter_version=row["adapter_version"],
+            identity_namespace_id=row["identity_namespace_id"],
+            association_hash=row["association_hash"],
+            local_date=row["local_date"],
         )
