@@ -455,29 +455,82 @@
 
   function renderWatchMetricCards(latest) {
     const grid = $("#watch-latest-grid");
-    const metrics = Object.keys(latest).sort((left, right) => {
+    const metrics = Object.keys(latest).filter((metric) => metric !== "vitals.heart_rate").sort((left, right) => {
       const leftIndex = watchMetricOrder.indexOf(left);
       const rightIndex = watchMetricOrder.indexOf(right);
       return (leftIndex < 0 ? 999 : leftIndex) - (rightIndex < 0 ? 999 : rightIndex) || left.localeCompare(right);
     });
+    setText("#signal-count", `${metrics.length + (latest["vitals.heart_rate"] ? 2 : 1)} connected signals`);
     if (!metrics.length) {
       grid.innerHTML = '<div class="available-empty">No watch measurements have been recorded yet.</div>';
       return;
     }
-    grid.innerHTML = metrics.map((metric) => {
+
+    const metricGroup = (metric) => {
+      if (["sleep.session", "sleep.samsung_session", "sleep.summary", "sleep.score", "vitals.oxygen_saturation_series", "vitals.skin_temperature", "wellness.energy_score"].includes(metric)) return "recovery";
+      if (["activity.steps", "activity.active_time", "activity.floors", "activity.distance", "activity.exercise_calories", "activity.speed", "activity.exercise_session", "activity.exercise_power", "activity.vo2_max"].includes(metric)) return "activity";
+      if (["cardiac.irregular_rhythm_notification", "sleep.apnea_detected_sign"].includes(metric)) return "findings";
+      return "health";
+    };
+    const groupDetails = {
+      recovery: { label: "Recovery", icon: "icon-moon", description: "Last night and latest recovery records" },
+      activity: { label: "Activity", icon: "icon-steps", description: "Movement recorded today or most recently" },
+      findings: { label: "Samsung findings", icon: "icon-shield", description: "Vendor-reported notices, not diagnoses" },
+      health: { label: "Other health", icon: "icon-layers", description: "Latest available connected records" },
+    };
+    const metricIcons = {
+      "vitals.oxygen_saturation": "icon-wind",
+      "vitals.oxygen_saturation_series": "icon-wind",
+      "vitals.skin_temperature": "icon-thermometer",
+      "wellness.energy_score": "icon-zap",
+      "sleep.score": "icon-moon",
+      "sleep.summary": "icon-moon",
+      "sleep.samsung_session": "icon-moon",
+      "sleep.session": "icon-moon",
+      "sleep.apnea_detected_sign": "icon-shield",
+      "cardiac.irregular_rhythm_notification": "icon-heart",
+      "activity.steps": "icon-steps",
+      "activity.active_time": "icon-clock",
+      "activity.floors": "icon-layers",
+      "activity.distance": "icon-steps",
+      "activity.exercise_calories": "icon-zap",
+      "activity.speed": "icon-gauge",
+      "activity.exercise_session": "icon-activity",
+      "activity.exercise_power": "icon-zap",
+      "activity.vo2_max": "icon-wind",
+      "vitals.blood_pressure": "icon-gauge",
+      "vitals.blood_glucose": "icon-droplet",
+    };
+    const groups = { recovery: [], activity: [], findings: [], health: [] };
+    metrics.forEach((metric) => groups[metricGroup(metric)].push(metric));
+
+    const cardMarkup = (metric) => {
       const observation = latest[metric];
       const presentation = watchMetricPresentation(metric, observation);
-      const age = formatAge(observation.observation_recency?.measurement_age_seconds);
-      const label = metric === "activity.steps" ? "Latest steps record" : (watchMetricLabels[metric] || metric);
+      const ageSeconds = Number(observation.observation_recency?.measurement_age_seconds);
+      const age = formatAge(ageSeconds);
+      const ageTone = Number.isFinite(ageSeconds) && ageSeconds <= 60 ? "live" : Number.isFinite(ageSeconds) && ageSeconds <= 86400 ? "today" : "history";
+      const label = watchMetricLabels[metric] || metric;
       const finding = ["cardiac.irregular_rhythm_notification", "sleep.apnea_detected_sign"].includes(metric);
       const eventLabel = observation.local_date || formatDate(observationTime(observation));
       return `
-        <article class="metric-card health-metric-card ${finding ? "vendor-finding-card" : ""}">
-          <span>${escapeHtml(label)}</span>
-          <strong>${escapeHtml(presentation.value)}</strong>${presentation.unit ? `<small>${escapeHtml(presentation.unit)}</small>` : ""}
+        <article class="health-metric-card ${finding ? "vendor-finding-card" : ""}">
+          <div class="metric-card-top"><span class="metric-icon"><svg><use href="#${metricIcons[metric] || "icon-activity"}"/></svg></span><span class="metric-age ${ageTone}">${escapeHtml(age)}</span></div>
+          <span class="metric-label">${escapeHtml(label)}</span>
+          <div class="metric-value"><strong>${escapeHtml(presentation.value)}</strong>${presentation.unit ? `<small>${escapeHtml(presentation.unit)}</small>` : ""}</div>
           <p class="metric-meta">${escapeHtml(adapterLabel(observation))}</p>
-          <p class="metric-time">${escapeHtml(eventLabel)} | ${escapeHtml(age)}</p>
+          <p class="metric-time">Recorded ${escapeHtml(eventLabel)}</p>
         </article>
+      `;
+    };
+
+    grid.innerHTML = Object.entries(groups).filter(([, groupMetrics]) => groupMetrics.length).map(([groupName, groupMetrics]) => {
+      const detail = groupDetails[groupName];
+      return `
+        <section class="signal-group signal-${groupName}">
+          <div class="signal-group-heading"><span class="signal-group-icon"><svg><use href="#${detail.icon}"/></svg></span><div><h3>${detail.label}</h3><p>${detail.description}</p></div></div>
+          <div class="signal-cards">${groupMetrics.map(cardMarkup).join("")}</div>
+        </section>
       `;
     }).join("");
   }
@@ -677,15 +730,15 @@
     const heartMaxY = heartValues.length ? Math.min(260, Math.ceil((Math.max(...heartValues) + 12) / 10) * 10) : 180;
     const heartYScale = (value) => heartTop + ((heartMaxY - value) / Math.max(1, heartMaxY - heartMinY)) * heartHeight;
 
-    ctx.fillStyle = "#fbfcfb";
+    ctx.fillStyle = "#f8fbff";
     ctx.fillRect(margins.left, glucoseTop, plotWidth, glucoseHeight);
     ctx.fillRect(margins.left, heartTop, plotWidth, heartHeight);
-    ctx.fillStyle = "#fff1ef";
+    ctx.fillStyle = "#fff0ee";
     ctx.fillRect(margins.left, yScale(threshold), plotWidth, glucoseTop + glucoseHeight - yScale(threshold));
 
     ctx.font = "11px Segoe UI, sans-serif";
-    ctx.fillStyle = "#78837f";
-    ctx.strokeStyle = "#e5e9e7";
+    ctx.fillStyle = "#64748b";
+    ctx.strokeStyle = "#e3eaf4";
     ctx.lineWidth = 1;
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
@@ -713,19 +766,19 @@
       const ratio = index / (xTicks - 1);
       const time = minX + (maxX - minX) * ratio;
       const x = margins.left + plotWidth * ratio;
-      ctx.strokeStyle = "#edf0ee";
+      ctx.strokeStyle = "#edf2f8";
       ctx.beginPath();
       ctx.moveTo(x, glucoseTop);
       ctx.lineTo(x, heartTop + heartHeight);
       ctx.stroke();
-      ctx.fillStyle = "#78837f";
+      ctx.fillStyle = "#64748b";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
       ctx.fillText(formatChartTick(new Date(time).toISOString()), x, heartTop + heartHeight + 11);
     }
 
     const thresholdY = yScale(threshold);
-    ctx.strokeStyle = "#c94f47";
+    ctx.strokeStyle = "#e35d4f";
     ctx.setLineDash([6, 5]);
     ctx.beginPath();
     ctx.moveTo(margins.left, thresholdY);
@@ -736,13 +789,13 @@
     ctx.font = "700 11px Segoe UI, sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "bottom";
-    ctx.fillStyle = "#006b57";
+    ctx.fillStyle = "#07856f";
     ctx.fillText("GLUCOSE  mg/dL", margins.left, glucoseTop - 10);
-    ctx.fillStyle = "#b32152";
+    ctx.fillStyle = "#d43d64";
     ctx.fillText("HEART RATE  bpm", margins.left, heartTop - 10);
     ctx.font = "10px Segoe UI, sans-serif";
     ctx.textAlign = "right";
-    ctx.fillStyle = "#b6403a";
+    ctx.fillStyle = "#b8453b";
     ctx.fillText(`${threshold} context threshold`, width - margins.right, thresholdY - 6);
 
     const coords = glucosePoints.map((point, index) => ({
@@ -752,7 +805,7 @@
       kind: "glucose",
       time: glucoseTimes[index],
     }));
-    ctx.strokeStyle = "#006b57";
+    ctx.strokeStyle = "#07856f";
     ctx.lineWidth = 2.7;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
@@ -772,15 +825,15 @@
       kind: "heart",
       time: heartTimes[index],
     }));
-    ctx.strokeStyle = "#b32152";
+    ctx.strokeStyle = "#d43d64";
     ctx.lineWidth = 2.4;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     strokeMonotoneSeries(ctx, heartCoords, () => HEART_GRAPH_GAP_MS, 3);
 
     [
-      { points: coords, color: "#006b57" },
-      { points: heartCoords, color: "#b32152" },
+      { points: coords, color: "#07856f" },
+      { points: heartCoords, color: "#d43d64" },
     ].forEach((series) => {
       if (!series.points.length) return;
       const last = series.points[series.points.length - 1];
@@ -796,7 +849,7 @@
     ctx.font = "12px Segoe UI, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#89928f";
+    ctx.fillStyle = "#8996aa";
     if (!glucosePoints.length) ctx.fillText("No glucose measurements in this range", margins.left + plotWidth / 2, glucoseTop + glucoseHeight / 2);
     if (!heartPoints.length) ctx.fillText(`Heart-rate sync failure · no samples in this ${String(rangeNames[state.range] || "period").toLowerCase()}`, margins.left + plotWidth / 2, heartTop + heartHeight / 2);
 

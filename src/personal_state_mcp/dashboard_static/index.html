@@ -25,6 +25,15 @@
     <symbol id="icon-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
     <symbol id="icon-alert" viewBox="0 0 24 24"><path d="M10.3 2.9 1.8 17a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 2.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
     <symbol id="icon-watch" viewBox="0 0 24 24"><path d="M9 2h6l1 4H8l1-4ZM8 18h8l-1 4H9l-1-4Z"/><circle cx="12" cy="12" r="6"/><path d="M12 9v3l2 1"/></symbol>
+    <symbol id="icon-heart" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8Z"/></symbol>
+    <symbol id="icon-droplet" viewBox="0 0 24 24"><path d="M12 2.5S5 10 5 15a7 7 0 0 0 14 0c0-5-7-12.5-7-12.5Z"/><path d="M9 16.5a3 3 0 0 0 3 2.5"/></symbol>
+    <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></symbol>
+    <symbol id="icon-thermometer" viewBox="0 0 24 24"><path d="M14 14.8V5a4 4 0 0 0-8 0v9.8a6 6 0 1 0 8 0Z"/><path d="M10 11v6"/></symbol>
+    <symbol id="icon-wind" viewBox="0 0 24 24"><path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h15a3 3 0 1 1-3 3"/><path d="M3 16h7"/></symbol>
+    <symbol id="icon-zap" viewBox="0 0 24 24"><path d="m13 2-9 12h8l-1 8 9-12h-8l1-8Z"/></symbol>
+    <symbol id="icon-steps" viewBox="0 0 24 24"><path d="M7 4h4v6H7zM13 14h4v6h-4z"/><path d="M9 10c0 4 2 6 6 6"/></symbol>
+    <symbol id="icon-gauge" viewBox="0 0 24 24"><path d="M20 13a8 8 0 1 0-16 0"/><path d="M12 13l4-4"/><path d="M5 19h14"/></symbol>
+    <symbol id="icon-layers" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/></symbol>
   </svg>
 
   <div class="app-shell">
@@ -33,7 +42,7 @@
         <div class="title-group">
           <div class="brand-mark"><svg><use href="#icon-activity"/></svg></div>
           <div>
-            <p class="eyebrow">Private health context</p>
+            <p class="eyebrow">Clinician Assist · Private health context</p>
             <h1>Personal State</h1>
           </div>
         </div>
@@ -54,23 +63,31 @@
 
       <section id="overview" class="view-section is-active" aria-labelledby="overview-title">
         <h2 id="overview-title" class="sr-only">Overview</h2>
+        <div class="snapshot-heading">
+          <div>
+            <p class="section-kicker">Your physiology at a glance</p>
+            <h2>What your sensors know right now</h2>
+          </div>
+          <div class="snapshot-status">
+            <span id="watch-status-chip" class="state-chip">Connecting</span>
+            <span>Every value is labeled with its age and source</span>
+          </div>
+        </div>
         <div class="current-band">
           <div class="current-reading current-glucose">
-            <div class="vital-name">Glucose</div>
-            <div class="reading-label"><span id="freshness-dot" class="status-dot"></span><span id="freshness-label">Loading</span></div>
+            <div class="vital-topline"><div class="vital-icon"><svg><use href="#icon-droplet"/></svg></div><div><div class="vital-name">Glucose</div><div class="reading-label"><span id="freshness-dot" class="status-dot"></span><span id="freshness-label">Loading</span></div></div></div>
             <div class="reading-value"><span id="current-value">--</span><span class="unit">mg/dL</span></div>
             <p id="current-time">No reading loaded</p>
           </div>
           <div id="current-heart-card" class="current-reading current-heart">
-            <div class="vital-name">Heart rate</div>
-            <div class="reading-label"><span id="heart-freshness-dot" class="status-dot"></span><span id="heart-freshness-label">Waiting for data</span></div>
+            <div class="vital-topline"><div class="vital-icon"><svg><use href="#icon-heart"/></svg></div><div><div class="vital-name">Heart rate</div><div class="reading-label"><span id="heart-freshness-dot" class="status-dot"></span><span id="heart-freshness-label">Waiting for data</span></div></div></div>
             <div class="reading-value"><span id="current-heart-value">--</span><span id="current-heart-unit" class="unit">bpm</span></div>
             <p id="current-heart-time">No heart-rate sample loaded</p>
             <a id="heart-repair-action" class="heart-repair-action" href="/downloads/personal-state-companion.apk" download hidden><svg><use href="#icon-download"/></svg>Install sync update</a>
           </div>
           <div class="current-context">
             <div class="context-head">
-              <span class="context-kicker">Decision-support context</span>
+              <span class="context-kicker">Personal context</span>
               <span id="threshold-chip" class="state-chip">Threshold 80</span>
             </div>
             <h3 id="context-title">Waiting for current state</h3>
@@ -82,6 +99,22 @@
           </div>
         </div>
 
+        <section class="signal-board" aria-labelledby="signal-board-title">
+          <div class="signal-board-heading">
+            <div><p class="section-kicker">Today, last night, and latest available</p><h2 id="signal-board-title">All connected health signals</h2></div>
+            <span id="signal-count" class="signal-count">Waiting for data</span>
+          </div>
+          <div id="watch-latest-grid" class="health-metric-grid" aria-label="Latest recorded watch and Samsung Health measurements"></div>
+          <div class="watch-sync-band" aria-label="Data connection status">
+            <div><span>Companion read</span><strong id="watch-read-time">No read recorded</strong></div>
+            <div><span>Server upload</span><strong id="watch-upload-time">No upload recorded</strong></div>
+            <div><span>Stored history</span><strong id="watch-history-count">0 observations</strong></div>
+            <div><span>Retention</span><strong id="watch-retention">--</strong></div>
+          </div>
+        </section>
+
+        <div class="trends-heading">
+          <div><p class="section-kicker">Patterns over time</p><h2>Glucose and heart rate together</h2></div>
         <div class="range-row">
           <div id="range-control" class="segmented-control" aria-label="History range">
             <button data-range="24h" class="is-active">Day</button>
@@ -90,6 +123,7 @@
             <button data-range="1y">Year</button>
           </div>
           <span id="range-caption" class="range-caption">Last 24 hours</span>
+        </div>
         </div>
 
         <div class="metric-grid" aria-label="Selected range summary">
@@ -193,21 +227,11 @@
 
       <section id="watch" class="view-section is-active consolidated-section" aria-labelledby="watch-title">
         <div class="section-heading watch-heading">
-          <div><p class="section-kicker">Galaxy Watch5 Pro through Samsung Health</p><h2 id="watch-title">Available watch data</h2></div>
+          <div><p class="section-kicker">Galaxy Watch5 Pro · Samsung Health · Health Connect</p><h2 id="watch-title">Records and connections</h2></div>
           <div class="watch-heading-actions">
             <a class="secondary-button" href="/downloads/personal-state-companion.apk" download><svg><use href="#icon-download"/></svg>Update phone companion</a>
-            <span id="watch-status-chip" class="state-chip">Not paired</span>
           </div>
         </div>
-
-        <div class="watch-sync-band">
-          <div><span>Companion Health Connect read</span><strong id="watch-read-time">No read recorded</strong></div>
-          <div><span>Server upload</span><strong id="watch-upload-time">No upload recorded</strong></div>
-          <div><span>Stored history</span><strong id="watch-history-count">0 observations</strong></div>
-          <div><span>Retention</span><strong id="watch-retention">--</strong></div>
-        </div>
-
-        <div id="watch-latest-grid" class="metric-grid health-metric-grid" aria-label="Latest recorded watch and Samsung Health measurements"></div>
 
         <div class="section-heading watch-recent-heading">
           <div><p class="section-kicker">Source-labeled observations</p><h2>Recent watch data</h2></div>
