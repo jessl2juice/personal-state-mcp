@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var store: PairingStore
     private val healthClient by lazy { HealthConnectClient.getOrCreate(this) }
+    private val samsungAdapter by lazy { SamsungHealthDataAdapterFactory.create(this, store) }
 
     private val pairingFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -77,6 +78,17 @@ class MainActivity : AppCompatActivity() {
                 permissionRequest.launch(setOf(HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND))
             } else {
                 binding.permissionSummary.text = "Background Health Connect access is unavailable on this phone."
+            }
+        }
+        binding.samsungPermissionButton.setOnClickListener {
+            lifecycleScope.launch {
+                binding.samsungPermissionButton.isEnabled = false
+                val result = runCatching { samsungAdapter.requestPermissions(this@MainActivity) }
+                binding.permissionSummary.text = result.fold(
+                    onSuccess = { it.message },
+                    onFailure = { "Samsung Health permission could not be completed: ${it.message ?: "unknown error"}" },
+                )
+                binding.samsungPermissionButton.isEnabled = true
             }
         }
         binding.syncButton.setOnClickListener { syncNow() }
@@ -149,8 +161,14 @@ class MainActivity : AppCompatActivity() {
             append("Background sync: ${if (background) "allowed" else "not allowed"}")
         }
         binding.lastSync.text = store.status() ?: "No sync has completed."
+        binding.samsungPermissionButton.text = if (samsungAdapter.installed) {
+            "Allow Samsung Health data"
+        } else {
+            "Samsung Health reader unavailable"
+        }
+        binding.samsungPermissionButton.isEnabled = samsungAdapter.installed
         refreshLiveHeartStatus()
-        binding.syncButton.isEnabled = ready && pairing != null && grantedCount > 0
+        binding.syncButton.isEnabled = ready && pairing != null && (grantedCount > 0 || samsungAdapter.installed)
         if (background) scheduleBackgroundIfAllowed()
     }
 

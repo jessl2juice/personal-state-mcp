@@ -6,6 +6,7 @@
     <string name="permissions">Choose health data</string>
     <string name="history_permission">Allow older history</string>
     <string name="background_permission">Allow background sync</string>
+    <string name="samsung_permission">Allow Samsung Health data</string>
     <string name="sync_now">Sync now</string>
     <string name="not_paired">This phone is not paired yet.</string>
 </resources>

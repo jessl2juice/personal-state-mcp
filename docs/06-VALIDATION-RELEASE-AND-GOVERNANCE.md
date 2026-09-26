@@ -37,7 +37,7 @@ The detailed findings and resolutions remain in the engineering review documents
 
 ## Current release contents
 
-### Server 0.2.0
+### Server 0.3.0
 
 - Libre-compatible follower collection.
 - SQLite long-term history.
@@ -46,7 +46,7 @@ The detailed findings and resolutions remain in the engineering review documents
 - Signed watch ingest and Health Connect storage.
 - Host allowlisting, rate limiting, audit records, and safety envelopes.
 
-### Phone companion 0.2.0
+### Phone companion 0.3.0
 
 - Android Health Connect read-only collection.
 - Encrypted pairing storage.
@@ -54,7 +54,7 @@ The detailed findings and resolutions remain in the engineering review documents
 - Wear OS message and Data Item reception.
 - Timestamp deduplication of direct heart-rate transport.
 
-### Watch companion 0.2.0
+### Watch companion 0.3.0
 
 - Foreground continuous heart-rate collection through Health Services.
 - Five-second screen-off batching, no GPS.

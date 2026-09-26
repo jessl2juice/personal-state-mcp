@@ -375,12 +375,43 @@ def test_public_source_tree_contains_no_proprietary_samsung_sdk_binary() -> None
     forbidden = [path for path in root.rglob("*.aar") if "build" not in {part.lower() for part in path.parts}]
     assert forbidden == []
     gradle = (root / "android" / "health-connect-companion" / "app" / "build.gradle.kts").read_text(encoding="utf-8")
-    assert "samsung-health-data" not in gradle.lower()
+    assert "SAMSUNG_HEALTH_DATA_SDK_AAR" in gradle
+    assert "maven" not in "\n".join(line.lower() for line in gradle.splitlines() if "samsung" in line.lower())
     source = "\n".join(
         path.read_text(encoding="utf-8")
         for path in (root / "android" / "health-connect-companion" / "app" / "src" / "main").rglob("*.kt")
     )
     assert "import com.samsung.android.sdk.health" not in source
+
+
+def test_optional_samsung_reader_fails_closed_and_survives_release_minification() -> None:
+    root = Path(__file__).parents[1]
+    reader_path = (
+        root
+        / "android"
+        / "health-connect-companion"
+        / "app"
+        / "src"
+        / "samsungSdk"
+        / "java"
+        / "ai"
+        / "clinicianassist"
+        / "personalstate"
+        / "SamsungHealthDataSdkAdapter.kt"
+    )
+    reader = reader_path.read_text(encoding="utf-8")
+    rules = (
+        root / "android" / "health-connect-companion" / "app" / "proguard-rules.pro"
+    ).read_text(encoding="utf-8")
+
+    assert "readChanges(builder.build())" in reader
+    assert "readAssociatedData(request)" in reader
+    assert "ChangeType.DELETE" in reader
+    assert "CHANGE_OVERLAP_MINUTES = 5L" in reader
+    assert "DataLimitExceeded" in reader
+    assert ".take(MAX_SERIES_ITEMS)" not in reader
+    assert ".take(MAX_SOURCE_MEMBERS)" not in reader
+    assert "SamsungHealthDataSdkAdapter {\n    *;\n}" in rules
 
 
 def test_fake_samsung_adapter_is_deterministic_and_contract_valid() -> None:

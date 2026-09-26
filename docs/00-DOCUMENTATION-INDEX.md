@@ -15,9 +15,9 @@ The system is designed to help the user and the user's clinicians review recorde
 
 | Component | Version | Role |
 | --- | --- | --- |
-| Personal State Python service | 0.2.0 | Collection, normalized storage, dashboard, MCP, exports |
-| Android phone companion | 0.2.0 (code 20000) | Health Connect reads, watch relay, authenticated upload |
-| Galaxy Watch companion | 0.2.0 (code 20001) | Direct live heart-rate collection and phone relay |
+| Personal State Python service | 0.3.0 | Collection, normalized storage, dashboard, MCP, exports |
+| Android phone companion | 0.3.0 (code 30000) | Health Connect reads, Samsung Health Data reads, watch relay, authenticated upload |
+| Galaxy Watch companion | 0.3.0 (code 30001) | Direct live heart-rate collection and phone relay |
 | Dashboard | Private production pilot | User and clinician review at the protected project hostname |
 
 ## Read this first

@@ -69,6 +69,14 @@
             android:text="@string/background_permission" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/samsungPermissionButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="10dp"
+            android:text="@string/samsung_permission" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/syncButton"
             android:layout_width="match_parent"
             android:layout_height="52dp"

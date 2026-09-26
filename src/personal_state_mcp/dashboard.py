@@ -913,7 +913,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 payload = self.server.app.companion_apk.read_bytes()
                 self.send_response(HTTPStatus.OK)
                 self._security_headers("application/vnd.android.package-archive", len(payload))
-                self.send_header("Content-Disposition", 'attachment; filename="personal-state-companion-0.2.0.apk"')
+                self.send_header("Content-Disposition", 'attachment; filename="personal-state-companion-0.3.0.apk"')
                 self.end_headers()
                 self.wfile.write(payload)
             elif parsed.path == "/api/dashboard":
