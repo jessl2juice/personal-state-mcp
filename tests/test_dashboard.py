@@ -193,3 +193,13 @@ def test_dashboard_companion_path_can_be_installed_outside_source(monkeypatch) -
         app = DashboardApp(make_config(Path(directory) / "state.db"))
 
         assert app.companion_apk == companion
+
+
+def test_dashboard_places_all_current_signals_before_history_charts() -> None:
+    static_dir = Path(__file__).parents[1] / "src" / "personal_state_mcp" / "dashboard_static"
+    html = (static_dir / "index.html").read_text(encoding="utf-8")
+
+    assert html.count('id="watch-latest-grid"') == 1
+    assert html.count('id="glucose-chart"') == 1
+    assert html.index('id="watch-latest-grid"') < html.index('id="glucose-chart"')
+    assert 'id="signal-count"' in html
