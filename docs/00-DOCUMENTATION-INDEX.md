@@ -16,8 +16,8 @@ The system is designed to help the user and the user's clinicians review recorde
 | Component | Version | Role |
 | --- | --- | --- |
 | Personal State Python service | 0.4.0 | Collection, normalized storage, dashboard, MCP, exports |
-| Android phone companion | 0.4.0 (code 40000) | Full authorized-history import, Health Connect and Samsung reads, watch relay, authenticated upload |
-| Galaxy Watch companion | 0.4.0 (code 40001) | One-second direct live heart-rate collection and phone relay |
+| Android phone companion | 0.4.1 (code 40100) | Full authorized-history import, Health Connect and Samsung reads, watch relay, authenticated upload, reconnect recovery |
+| Galaxy Watch companion | 0.4.1 (code 40101) | Five-second direct live heart-rate delivery, phone relay, and post-reboot recovery |
 | Dashboard | Private production pilot | User and clinician review at the protected project hostname |
 
 ## Read this first
@@ -63,7 +63,7 @@ The original detailed design, independent Fable review, resolution logs, and nor
 - A shared timeline does not establish correlation or causation.
 - A missing or stale sample is a data-availability condition, not evidence of normal physiology.
 - The configured 80 mg/dL value is a user-specific conversational context threshold. It is not an alarm threshold and cannot be changed by an agent.
-- Live heart rate is displayed as a number only when the newest direct measurement is no more than two seconds old.
+- Live heart rate is displayed as a number only when the newest direct measurement is no more than ten seconds old, covering the five-second watch delivery cadence without flicker.
 - Smoothed heart-rate drawing changes only the display curve. Stored values, tooltips, tables, exports, and APIs retain raw measurements and timestamps.
 - Access control and encryption reduce risk but do not make a general compliance certification claim. Any clinical organization must perform its own legal, privacy, security, and workflow review before adopting the system.
 

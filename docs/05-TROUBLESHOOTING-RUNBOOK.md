@@ -12,7 +12,7 @@ For safety-sensitive questions, use the official Libre or Samsung application an
 
 ## Dashboard says `No live data` for heart rate
 
-This is the intended display when the newest direct heart-rate measurement is more than two seconds old.
+This is the intended display when the newest direct heart-rate measurement is more than ten seconds old. The watch normally delivers every five seconds, so the card remains stable while still withholding data after two expected deliveries are missed.
 
 ### User checks
 
@@ -24,7 +24,7 @@ This is the intended display when the newest direct heart-rate measurement is mo
 6. Open the Personal State phone app and confirm it is paired.
 7. Keep the phone on a working network and wait up to one minute.
 
-The current watch release automatically restarts its own stalled heart stream after 45 seconds. If another workout application owns Health Services, Personal State waits and resumes afterward.
+The current watch release automatically restarts its own stalled heart stream after 45 seconds. Version 0.4.1 also retries after boot and user unlock, and accepts an app-private resume request from the paired phone only when monitoring was previously enabled. If another workout application owns Health Services, Personal State waits and resumes afterward.
 
 ### Operator checks
 

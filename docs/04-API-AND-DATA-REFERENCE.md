@@ -92,7 +92,7 @@ Collected categories outside the exposure allowlist remain unavailable to agents
 | Method | Route | Purpose |
 | --- | --- | --- |
 | GET | `/` | Dashboard application |
-| GET | `/api/live` | Compact current glucose and heart-rate state for two-second polling |
+| GET | `/api/live` | Compact current glucose and heart-rate state for one-second polling |
 | GET | `/api/dashboard?range=24h` | Full selected-range dashboard payload |
 | GET | `/api/export.csv?range=24h` | Selected-range glucose export |
 | GET | `/api/watch/export.csv?range=24h` | Selected-range watch export |
@@ -249,8 +249,8 @@ Default service policy:
 
 ### Live dashboard heart rate
 
-- numeric live value through two seconds.
-- no numeric live value after two seconds.
+- numeric live value through ten seconds.
+- no numeric live value after ten seconds.
 - older values may remain in history with explicit historical labeling.
 
 ### Other watch observations

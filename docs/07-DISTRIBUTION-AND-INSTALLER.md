@@ -60,6 +60,6 @@ Before publication:
 5. verify password storage and a Libre collection;
 6. install both Android companions with the combined setup;
 7. verify the APK signatures match;
-8. verify live heart rate is withheld after two seconds without a fresh sample;
+8. verify live heart rate is withheld after ten seconds without a fresh sample;
 9. uninstall and confirm history is retained;
 10. repeat with destructive removal in a disposable profile.

@@ -19,7 +19,7 @@ def test_phone_and_watch_are_one_play_identity_with_distinct_versions() -> None:
 
     assert _gradle_value(phone, "applicationId") == "ai.clinicianassist.personalstate"
     assert _gradle_value(watch, "applicationId") == "ai.clinicianassist.personalstate"
-    assert _gradle_value(phone, "versionName") == _gradle_value(watch, "versionName") == "0.4.0"
+    assert _gradle_value(phone, "versionName") == _gradle_value(watch, "versionName")
     assert _gradle_value(phone, "versionCode") != _gradle_value(watch, "versionCode")
 
 

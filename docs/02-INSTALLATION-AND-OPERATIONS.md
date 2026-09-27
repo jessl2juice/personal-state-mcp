@@ -94,7 +94,7 @@ The phone stores pairing material with Android Keystore-backed encryption. It re
 5. Confirm the persistent `Personal State monitoring` notification is present.
 6. Confirm the watch screen reports `Live to phone` and a recent value.
 7. Confirm the phone app shows a recent watch heart-rate value.
-8. Confirm the dashboard's live heart-rate timestamp advances every second and remains within two seconds.
+8. Confirm the dashboard's live heart-rate timestamp advances with each five-second watch delivery and remains within ten seconds.
 9. Disconnect installation tooling and observe the feed for at least five minutes before declaring activation complete.
 
 The watch sends each new sample over two Wear OS Data Layer paths: an immediate message and an urgent latest-value Data Item. The phone deduplicates the paths by measurement timestamp. The watch restarts its own stalled Health Services exercise stream after 45 seconds without a sample when another application does not own the exercise session.
@@ -126,7 +126,7 @@ The private tunnel token is protected with Windows DPAPI and stored outside the 
 
 - Confirm the dashboard opens through Access.
 - Confirm glucose age and heart-rate age are plausible.
-- Confirm a live heart-rate number is shown only when age is two seconds or less.
+- Confirm a live heart-rate number is shown only when age is ten seconds or less.
 - Confirm the watch notification remains present when monitoring is intended.
 
 ### Weekly

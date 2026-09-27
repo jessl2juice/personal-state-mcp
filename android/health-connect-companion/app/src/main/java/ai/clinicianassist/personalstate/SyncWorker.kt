@@ -14,6 +14,7 @@ class SyncWorker(
     override suspend fun doWork(): Result {
         val store = PairingStore(applicationContext)
         if (store.pairing() == null) return Result.success()
+        WatchRecoveryMessenger.requestResume(applicationContext)
         val client = HealthConnectClient.getOrCreate(applicationContext)
         if (client.features.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND) != HealthConnectFeatures.FEATURE_STATUS_AVAILABLE) {
             return Result.success()

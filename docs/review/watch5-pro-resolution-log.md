@@ -35,7 +35,7 @@ Fable's initial gate was `approved after listed changes`. Re-review 1 remained b
 ## P2 Acceptance Criteria
 
 - Dashboard cards show attribution and all three relevant ages, charts break across gaps, styling is neutral, and Samsung apps remain visibly authoritative.
-- Ingest limits are fixed at 1 MiB, 500 changes, 2,000 samples/stages, depth 12, string length 512, 300-second request skew, and 40 authenticated batches/device/minute. The rate ceiling includes bounded headroom for the visible two-second direct heart stream.
+- Ingest limits are fixed at 1 MiB, 500 changes, 2,000 samples/stages, depth 12, string length 512, 300-second request skew, and 40 authenticated batches/device/minute. The rate ceiling includes bounded headroom for the visible direct-heart stream.
 - Failure tests cover platform/source absence, token rotation, lost/reinstalled phones, expired change tokens, clocks/timezones, database failures, multiple phones, restarts, and acknowledgement loss.
 - Schema migration is versioned, idempotent, backed up, and rollback-safe; watch support is disabled by default until synthetic end-to-end success.
 - APK package identity and signing key are stable and documented before installation.

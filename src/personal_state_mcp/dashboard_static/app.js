@@ -28,7 +28,7 @@
 
   const rangeHours = { "24h": 24, "7d": 168, "30d": 720, "1y": 8760, "all": null };
   const rangeNames = { "24h": "Day", "7d": "Week", "30d": "Month", "1y": "Year", "all": "All" };
-  const HEART_LIVE_MAX_AGE_SECONDS = 2;
+  const HEART_LIVE_MAX_AGE_SECONDS = 10;
   const HEART_GRAPH_GAP_MS = 60 * 1000;
   const watchMetricLabels = {
     "activity.steps": "Steps",
@@ -280,7 +280,7 @@
       state.heartCutoffTimer = window.setTimeout(() => {
         heartCard.classList.add("is-unavailable");
         setStatusClass($("#heart-freshness-dot"), "error");
-        setText("#heart-freshness-label", "Failed · latest sample is over 2 seconds old");
+        setText("#heart-freshness-label", "Failed · latest sample is over 10 seconds old");
         setText("#current-heart-value", "No live data");
         setText("#current-heart-unit", "");
         setText("#current-heart-time", `Historical only: ${heartPresentation.value} bpm recorded ${formatDate(heartSampleTime(heart))}`);

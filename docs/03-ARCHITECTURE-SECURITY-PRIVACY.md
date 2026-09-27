@@ -109,7 +109,7 @@ Dashboard and ingest credentials are intentionally not interchangeable.
 ## Freshness and non-deception controls
 
 - Glucose freshness is based on measurement and receipt times.
-- Live heart rate is numeric only within two seconds of measurement.
+- Live heart rate is numeric only within ten seconds of measurement, covering the five-second watch cadence without flicker.
 - Old heart-rate values remain historical and cannot appear as current.
 - Dashboard curves break after a one-minute heart-rate gap.
 - Smoothed drawing never changes persisted or exported values.
@@ -138,7 +138,7 @@ These controls are designed to prevent technically available but old data from l
 | Cross-surface privilege | Dashboard and ingest host isolation; ingest host serves health check and ingest only |
 | Payload abuse | 1 MiB body limit, strict JSON parser, closed metric and unit allowlists, depth and count limits, transactional insert |
 | Excess collection | Read-only permissions, user-selected categories, no routes or raw sensor streams |
-| Misleading current state | Two-second live-heart cutoff, explicit ages, visible gaps, stale gating |
+| Misleading current state | Ten-second live-heart cutoff for the five-second watch cadence, explicit ages, visible gaps, stale gating |
 | Local database disclosure | Current-user ACLs, expected full-disk encryption, protected backups, no raw credentials |
 | Agent overreach | Read-only MCP annotations, host allowlist, metric exposure allowlist, audit, no configuration tools |
 

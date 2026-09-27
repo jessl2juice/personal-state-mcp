@@ -110,7 +110,7 @@ Tests use synthetic data. Instrumented connected-device tests must not run again
 - Desktop and mobile layouts do not overlap or overflow.
 - Day is the default; Week, Month, and Year remain selectable.
 - Glucose and heart rate remain visually distinct and share a truthful time axis.
-- Live heart rate disappears at three seconds.
+- Live heart rate disappears at eleven seconds.
 - Historical values are explicitly labeled.
 - Heart-rate display smoothing leaves raw data unchanged.
 - Gaps through one minute connect; longer gaps break.
@@ -123,7 +123,7 @@ Tests use synthetic data. Instrumented connected-device tests must not run again
 - Watch sample times advance repeatedly.
 - Phone relay times advance repeatedly.
 - Server ingest times advance repeatedly.
-- Dashboard age remains within two seconds for at least five minutes.
+- Dashboard age remains within ten seconds for at least five minutes, with no flicker between five-second watch deliveries.
 - The same verification passes after USB and debugger disconnection.
 - Screen-off and ordinary movement do not permanently stop the stream.
 - A forced or naturally occurring 45-second stream stall recovers without reinstalling the application.

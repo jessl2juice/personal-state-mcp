@@ -16,6 +16,7 @@ from .models import HealthObservation, iso_utc
 SCHEMA_VERSION = "personal-state-watch-batch/v1"
 SAMSUNG_HEALTH_PACKAGE = "com.sec.android.app.shealth"
 DIRECT_WEAR_PACKAGE = "ai.clinicianassist.personalstate"
+DIRECT_WEAR_LIVE_MAX_AGE_SECONDS = 10
 MAX_BODY_BYTES = 1024 * 1024
 MAX_CHANGES = 500
 MAX_SERIES_ITEMS = 2000
@@ -528,8 +529,8 @@ def observation_recency(observation: HealthObservation, now: datetime) -> dict[s
         status = "unknown"
         reason = "The observation timestamp is in the future."
     elif observation.metric == "vitals.heart_rate":
-        if observation.adapter_id == "wear_health_services" and age <= 2:
-            status, reason = "live", "Direct Wear heart rate was measured within the past two seconds."
+        if observation.adapter_id == "wear_health_services" and age <= DIRECT_WEAR_LIVE_MAX_AGE_SECONDS:
+            status, reason = "live", "Direct Wear heart rate was measured within the past ten seconds."
         elif age <= 900:
             status, reason = "recent_record", "This heart-rate record is within 15 minutes but is not labeled live."
         else:

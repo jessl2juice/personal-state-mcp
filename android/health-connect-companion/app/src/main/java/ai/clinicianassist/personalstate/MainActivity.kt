@@ -105,6 +105,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (::store.isInitialized && store.pairing() != null) {
+            WatchRecoveryMessenger.requestResume(this)
+        }
         lifecycleScope.launch { refreshStatus() }
     }
 
@@ -228,6 +231,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val MAX_PAIRING_FILE_BYTES = 16 * 1024
-        private const val HEART_LIVE_MAX_AGE_SECONDS = 2L
+        private const val HEART_LIVE_MAX_AGE_SECONDS = 10L
     }
 }

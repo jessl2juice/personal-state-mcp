@@ -23,6 +23,7 @@ from .freshness import FreshnessPolicy, classify_freshness, classify_threshold
 from .models import GlucoseReading, SAFETY_NOTICE, iso_utc, utc_now
 from .storage import StateStore
 from .watch_contract import (
+    DIRECT_WEAR_LIVE_MAX_AGE_SECONDS,
     MAX_BODY_BYTES,
     OBSERVATION_METRICS,
     SCHEMA_VERSION,
@@ -57,7 +58,7 @@ RANGES: dict[str, float | None] = {
 }
 MAX_SOURCE_READINGS = 200_000
 MAX_CHART_POINTS = 1_200
-HEART_LIVE_MAX_AGE_SECONDS = 2
+HEART_LIVE_MAX_AGE_SECONDS = DIRECT_WEAR_LIVE_MAX_AGE_SECONDS
 HISTORICAL_OBSERVATION_METRICS = {
     "activity.total_calories",
     "activity.move_minutes",
@@ -282,7 +283,7 @@ def _heart_sync_status(
             "status": "current",
             "last_sample_at": iso_utc(last_sample),
             "sample_age_seconds": age_seconds,
-            "message": "Heart-rate data is live (measured within the past two seconds).",
+            "message": "Heart-rate data is live (measured within the past ten seconds).",
         }
     recent_upload = last_upload_at is not None and (now - last_upload_at) <= timedelta(hours=24)
     return {

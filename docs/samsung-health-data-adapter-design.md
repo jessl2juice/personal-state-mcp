@@ -260,7 +260,7 @@ Fixed presentation matrix:
 
 | Source/metric | Label rule |
 |---|---|
-| direct Wear heart rate | `live` only when event age is two seconds or less; otherwise no value in the live card |
+| direct Wear heart rate | `live` only when event age is ten seconds or less; otherwise no value in the live card |
 | Health Connect heart rate | never `live`; `recent record` through 15 minutes, then `last recorded` |
 | oxygen point or series | `recent record` through 2 hours, then `latest recorded` |
 | activity | `recent record` through 12 hours, then `latest recorded` |
@@ -362,7 +362,7 @@ The dashboard shows adapter, last phone read, last server upload, availability p
 - Supported Samsung records preserve native timing and documented semantics.
 - Unsupported, absent, denied, empty, and failed states are distinct from real values.
 - New Samsung metrics do not appear in any agent response without explicit configuration.
-- No metric is called live outside the direct Wear two-second rule.
+- No metric is called live outside the direct Wear ten-second rule.
 - No vendor finding is relabeled as a Personal State diagnosis.
 - A delete from one adapter cannot erase another adapter's record.
 - Public source and releases contain no proprietary Samsung SDK binary.

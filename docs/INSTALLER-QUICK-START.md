@@ -91,5 +91,5 @@ After installation:
 1. The dashboard opens at `http://127.0.0.1:8766/`.
 2. Glucose shows a measurement time, received time, age, freshness, and provenance.
 3. The official Libre app remains responsible for alerts.
-4. Heart rate appears in the live position only when the direct watch sample is no more than two seconds old.
+4. Heart rate appears in the live position only when the direct watch sample is no more than ten seconds old, covering the five-second watch cadence without flicker.
 5. Old or missing watch data is labeled clearly and never presented as live.
