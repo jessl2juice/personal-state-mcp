@@ -113,7 +113,7 @@ $venvPath = Join-Path $InstallRoot "venv"
 & $python.Exe @($python.Prefix) -m venv $venvPath
 if ($LASTEXITCODE -ne 0) { throw "Python could not create the private Personal State environment." }
 $venvPython = Join-Path $venvPath "Scripts\python.exe"
-& $venvPython -m pip install --disable-pip-version-check --no-index --find-links $wheelhouse "personal-state-mcp[mcp,keychain]==0.3.0"
+& $venvPython -m pip install --disable-pip-version-check --no-index --find-links $wheelhouse "personal-state-mcp[mcp,keychain]==0.4.0"
 if ($LASTEXITCODE -ne 0) { throw "Personal State packages could not be installed." }
 
 Copy-Item -LiteralPath $scriptsSource -Destination (Join-Path $InstallRoot "scripts") -Recurse -Force

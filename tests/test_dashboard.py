@@ -153,12 +153,12 @@ def test_recent_upload_with_old_heart_sample_is_a_sync_failure() -> None:
     assert "transfer is failing" in status["message"]
 
 
-def test_heart_rate_is_live_only_within_one_minute() -> None:
+def test_heart_rate_is_live_only_within_two_seconds() -> None:
     now = datetime.now(timezone.utc).replace(microsecond=0)
     upload = {"received_at_utc": now.isoformat()}
 
-    at_cutoff = _heart_sync_status({"last_at": (now - timedelta(seconds=60)).isoformat()}, upload, now)
-    over_cutoff = _heart_sync_status({"last_at": (now - timedelta(seconds=61)).isoformat()}, upload, now)
+    at_cutoff = _heart_sync_status({"last_at": (now - timedelta(seconds=2)).isoformat()}, upload, now)
+    over_cutoff = _heart_sync_status({"last_at": (now - timedelta(seconds=3)).isoformat()}, upload, now)
 
     assert at_cutoff["status"] == "current"
     assert over_cutoff["status"] == "failure"
@@ -205,3 +205,6 @@ def test_dashboard_places_all_current_signals_before_history_charts() -> None:
     assert 'id="signal-count"' in html
     assert 'class="current-context"' not in html
     assert 'class="threshold-note"' in html
+    assert 'id="metric-dialog"' in html
+    assert 'id="metric-history-chart"' in html
+    assert 'id="timeline-panel"' in html

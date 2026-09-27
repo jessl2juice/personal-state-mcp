@@ -528,8 +528,8 @@ def observation_recency(observation: HealthObservation, now: datetime) -> dict[s
         status = "unknown"
         reason = "The observation timestamp is in the future."
     elif observation.metric == "vitals.heart_rate":
-        if observation.adapter_id == "wear_health_services" and age <= 60:
-            status, reason = "live", "Direct Wear heart rate was measured within the past minute."
+        if observation.adapter_id == "wear_health_services" and age <= 2:
+            status, reason = "live", "Direct Wear heart rate was measured within the past two seconds."
         elif age <= 900:
             status, reason = "recent_record", "This heart-rate record is within 15 minutes but is not labeled live."
         else:

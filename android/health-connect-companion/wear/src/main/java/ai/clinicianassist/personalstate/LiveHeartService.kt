@@ -398,7 +398,7 @@ class LiveHeartService : Service() {
         private const val WATCHDOG_INTERVAL_MS = 15_000L
         private const val STALE_STREAM_MS = 45_000L
         private const val RECOVERY_SETTLE_MS = 1_500L
-        private const val SEND_INTERVAL_MS = 2_000L
+        private const val SEND_INTERVAL_MS = 1_000L
         private const val MESSAGE_PATH = "/personal-state/heart-rate/v1"
         private const val READ_HEART_RATE = "android.permission.health.READ_HEART_RATE"
         private const val READ_HEALTH_DATA_IN_BACKGROUND = "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND"

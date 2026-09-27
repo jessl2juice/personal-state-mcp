@@ -138,7 +138,7 @@ class SamsungHealthDataSdkAdapter(
             if (hasCheckpoint(CHECKPOINT_FLOORS)) readFloorChanges(floorsStart, now, hasher)
             else readFloors(floorsStart, now, hasher)
         }
-        val activityStart = now.minus(BACKFILL_DAYS, ChronoUnit.DAYS)
+        val activityStart = FULL_HISTORY_START
         collectMetric(
             "activity.active_time", "", PERMISSION_ACTIVITY, granted,
             activityStart, now, changes, availability, checkpointUpdates,
@@ -169,7 +169,7 @@ class SamsungHealthDataSdkAdapter(
                 metric,
                 "not_exposed_by_provider",
                 "Samsung Health Data SDK 1.1.0 does not expose observation records for this category.",
-                now.minus(BACKFILL_DAYS, ChronoUnit.DAYS),
+                FULL_HISTORY_START,
                 now,
             )
         }
@@ -213,7 +213,7 @@ class SamsungHealthDataSdkAdapter(
                     if (read.isEmpty()) "no_observation" else "available",
                     windowStart,
                     windowEnd,
-                    backfillLimited = checkpointKey.isBlank() || isInitialBackfill,
+                    backfillLimited = false,
                     reconciling = checkpointKey.isNotBlank() && !isInitialBackfill,
                 )
             }
@@ -915,7 +915,7 @@ class SamsungHealthDataSdkAdapter(
         val prior = pairingStore.checkpoint(checkpointKey)
             ?.let { runCatching { Instant.parse(it) }.getOrNull() }
         return prior?.minus(CHANGE_OVERLAP_MINUTES, ChronoUnit.MINUTES)
-            ?: now.minus(BACKFILL_DAYS, ChronoUnit.DAYS)
+            ?: FULL_HISTORY_START
     }
 
     private fun hasCheckpoint(checkpointKey: String): Boolean = pairingStore.checkpoint(checkpointKey)
@@ -952,7 +952,7 @@ class SamsungHealthDataSdkAdapter(
     private class DataLimitExceeded(message: String) : IllegalStateException(message)
 
     private companion object {
-        const val BACKFILL_DAYS = 30L
+        val FULL_HISTORY_START: Instant = Instant.parse("2000-01-01T00:00:00Z")
         const val CHANGE_OVERLAP_MINUTES = 5L
         const val PAGE_SIZE = 500
         const val MAX_SERIES_ITEMS = 2000

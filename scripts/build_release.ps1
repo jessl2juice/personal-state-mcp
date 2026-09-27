@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.3.0",
+    [string]$Version = "0.4.0",
     [string]$PythonPath = "$PSScriptRoot\..\.venv\Scripts\python.exe",
     [string]$SigningRoot = "$env:LOCALAPPDATA\PersonalStateMCP\release-signing",
     [string]$SamsungSdkAar = "",

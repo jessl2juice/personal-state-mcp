@@ -189,7 +189,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val ageSeconds = max(0L, (System.currentTimeMillis() - measuredAtMs) / 1_000L)
-        val label = if (ageSeconds <= 60L) "LIVE HEART RATE" else "LAST WATCH HEART RATE"
+        val label = if (ageSeconds <= HEART_LIVE_MAX_AGE_SECONDS) "LIVE HEART RATE" else "NO LIVE HEART RATE"
         val age = when {
             ageSeconds < 60L -> "$ageSeconds sec old"
             ageSeconds < 3_600L -> "${ageSeconds / 60L} min old"
@@ -228,5 +228,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val MAX_PAIRING_FILE_BYTES = 16 * 1024
+        private const val HEART_LIVE_MAX_AGE_SECONDS = 2L
     }
 }

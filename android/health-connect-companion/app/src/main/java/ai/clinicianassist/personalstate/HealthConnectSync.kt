@@ -23,7 +23,7 @@ import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
-import androidx.health.connect.client.request.AggregateRequest
+import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
@@ -32,6 +32,8 @@ import androidx.health.connect.client.records.metadata.Metadata
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
+import java.time.LocalDateTime
+import java.time.Period
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import kotlin.reflect.KClass
@@ -71,14 +73,17 @@ class HealthConnectSync(
         val pairing = store.pairing() ?: error("Pair this phone before syncing.")
         store.migrateHeartRateToAllOrigins()
         val granted = client.permissionController.getGrantedPermissions()
+        val fullHistory = HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY in granted
         val started = Instant.now()
         var uploaded = 0
         val failed = mutableListOf<String>()
+        store.setStatus(if (fullHistory) "Importing all authorized health history..." else "Importing the available 30-day health window...")
         for (spec in specs) {
             val permission = HealthPermission.getReadPermission(spec.type)
             if (permission !in granted) continue
             try {
-                uploaded += syncType(spec, pairing)
+                store.setStatus("Importing ${spec.metric}... $uploaded records uploaded so far.")
+                uploaded += syncType(spec, pairing, fullHistory)
             } catch (error: Exception) {
                 val reason = error.message?.replace(Regex("\\s+"), " ")?.take(140) ?: "no message"
                 failed += "${spec.metric} (${error::class.simpleName}: $reason)"
@@ -154,14 +159,19 @@ class HealthConnectSync(
         check(uploader.upload(pairing, batch)) { "Samsung Health Data upload failed." }
     }
 
-    private suspend fun syncType(spec: TypeSpec<out Record>, pairing: PairingConfig): Int {
+    private suspend fun syncType(spec: TypeSpec<out Record>, pairing: PairingConfig, fullHistory: Boolean): Int {
         val checkpoint = store.checkpoint(spec.metric)
-        var uploaded = if (checkpoint == null) initialBackfill(spec, pairing) else changesSince(spec, checkpoint, pairing)
+        var uploaded = if (checkpoint == null) initialBackfill(spec, pairing, fullHistory) else changesSince(spec, checkpoint, pairing)
         if (checkpoint != null && spec.metric == "vitals.heart_rate") {
             uploaded += reconcileRecent(spec, pairing, days = 3)
         }
         return if (spec.metric == "activity.steps") {
-            uploaded + syncStepAggregates(pairing, if (checkpoint == null) 30 else 2)
+            val start = if (checkpoint == null) {
+                if (fullHistory) FULL_HISTORY_START else Instant.now().minus(FALLBACK_BACKFILL_DAYS, ChronoUnit.DAYS)
+            } else {
+                Instant.now().minus(2, ChronoUnit.DAYS)
+            }
+            uploaded + syncStepAggregates(pairing, start, backfillLimited = checkpoint == null && !fullHistory)
         } else {
             uploaded
         }
@@ -170,9 +180,9 @@ class HealthConnectSync(
     private fun originFilters(spec: TypeSpec<out Record>): Set<DataOrigin> =
         if (spec.metric == "vitals.heart_rate") emptySet() else setOf(DataOrigin(SAMSUNG_HEALTH_PACKAGE))
 
-    private suspend fun initialBackfill(spec: TypeSpec<out Record>, pairing: PairingConfig): Int {
+    private suspend fun initialBackfill(spec: TypeSpec<out Record>, pairing: PairingConfig, fullHistory: Boolean): Int {
         val now = Instant.now()
-        val start = now.minus(30, ChronoUnit.DAYS)
+        val start = if (fullHistory) FULL_HISTORY_START else now.minus(FALLBACK_BACKFILL_DAYS, ChronoUnit.DAYS)
         val token = client.getChangesToken(
             ChangesTokenRequest(
                 recordTypes = setOf(spec.type),
@@ -202,13 +212,13 @@ class HealthConnectSync(
             }
             pageToken = response.pageToken
             if (changes.size >= 450) {
-                uploadChanges(pairing, changes.toList(), availability(spec.metric, changes.isNotEmpty(), start, now, backfillLimited = true))
+                uploadChanges(pairing, changes.toList(), availability(spec.metric, changes.isNotEmpty(), start, now, backfillLimited = !fullHistory))
                 uploaded += changes.size
                 changes.clear()
             }
         } while (!pageToken.isNullOrEmpty())
 
-        uploadChanges(pairing, changes, availability(spec.metric, hasRecords, start, now, backfillLimited = true))
+        uploadChanges(pairing, changes, availability(spec.metric, hasRecords, start, now, backfillLimited = !fullHistory))
         uploaded += changes.size
         store.setCheckpoint(spec.metric, token)
         return uploaded
@@ -292,25 +302,25 @@ class HealthConnectSync(
         return count
     }
 
-    private suspend fun syncStepAggregates(pairing: PairingConfig, dayCount: Int): Int {
+    private suspend fun syncStepAggregates(pairing: PairingConfig, startAt: Instant, backfillLimited: Boolean): Int {
         val now = Instant.now()
         val zone = ZoneId.systemDefault()
-        val today = now.atZone(zone).toLocalDate()
         val changes = mutableListOf<JSONObject>()
-        for (daysAgo in (dayCount - 1) downTo 0) {
-            val date = today.minusDays(daysAgo.toLong())
-            val start = date.atStartOfDay(zone).toInstant()
-            val nextStart = date.plusDays(1).atStartOfDay(zone).toInstant()
-            val end = minOf(nextStart, now)
-            if (end <= start) continue
-            val result = client.aggregate(
-                AggregateRequest(
-                    metrics = setOf(StepsRecord.COUNT_TOTAL),
-                    timeRangeFilter = TimeRangeFilter.between(start, end),
-                    dataOriginFilter = setOf(DataOrigin(SAMSUNG_HEALTH_PACKAGE)),
-                ),
-            )
-            val count = result[StepsRecord.COUNT_TOTAL] ?: continue
+        val startLocal = LocalDateTime.ofInstant(startAt, zone)
+        val endLocal = LocalDateTime.ofInstant(now, zone)
+        val results = client.aggregateGroupByPeriod(
+            AggregateGroupByPeriodRequest(
+                metrics = setOf(StepsRecord.COUNT_TOTAL),
+                timeRangeFilter = TimeRangeFilter.between(startLocal, endLocal),
+                timeRangeSlicer = Period.ofDays(1),
+                dataOriginFilter = setOf(DataOrigin(SAMSUNG_HEALTH_PACKAGE)),
+            ),
+        )
+        for (result in results) {
+            val count = result.result[StepsRecord.COUNT_TOTAL] ?: continue
+            val start = result.startTime.atZone(zone).toInstant()
+            val end = minOf(result.endTime.atZone(zone).toInstant(), now)
+            val date = result.startTime.toLocalDate()
             val observation = JSONObject()
                 .put("record_id", "steps-daily-$date")
                 .put("metric", "activity.steps")
@@ -331,13 +341,17 @@ class HealthConnectSync(
                     .put("unit", "count")
                     .put("aggregation", "health_connect"))
             changes += upsert(observation)
+            if (changes.size >= 450) {
+                uploadChanges(pairing, changes.toList(), availability("activity.steps", true, startAt, now, backfillLimited = backfillLimited))
+                changes.clear()
+            }
         }
         uploadChanges(
             pairing,
             changes,
-            availability("activity.steps", changes.isNotEmpty(), today.minusDays((dayCount - 1).toLong()).atStartOfDay(zone).toInstant(), now, backfillLimited = dayCount >= 30),
+            availability("activity.steps", results.isNotEmpty(), startAt, now, backfillLimited = backfillLimited),
         )
-        return changes.size
+        return results.size
     }
 
     private suspend fun uploadChanges(pairing: PairingConfig, changes: List<JSONObject>, availability: AvailabilityReport) {
@@ -543,6 +557,8 @@ class HealthConnectSync(
     }
 
     companion object {
+        private const val FALLBACK_BACKFILL_DAYS = 30L
+        private val FULL_HISTORY_START: Instant = Instant.parse("2000-01-01T00:00:00Z")
         const val SAMSUNG_HEALTH_PACKAGE = "com.sec.android.app.shealth"
         private const val MAX_BATCH_BYTES = 1024 * 1024
         private const val MAX_SERIES_SAMPLES = 2000

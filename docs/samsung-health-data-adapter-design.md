@@ -143,7 +143,7 @@ Rollback is operational, not lossy: stop v2 ingestion, stop the upgraded service
 
 Health Connect remains the owner of existing portable metrics and direct Wear remains the owner of near-real-time heart rate. The first Samsung SDK release owns only new Samsung-specific or richer metrics. It does not duplicate Health Connect steps, generic heart rate, blood pressure, weight, nutrition, or exercise.
 
-`ActivitySummaryType` is the one provider exception to changed-data synchronization: Samsung exposes active time through a daily aggregate request rather than a change-readable record type. The companion therefore rereads the bounded 30-day active-time window on each run and relies on deterministic identities and idempotent server upserts. Its availability explicitly remains `backfill_limited`; it never claims a change checkpoint for this aggregate.
+`ActivitySummaryType` is the one provider exception to changed-data synchronization: Samsung exposes active time through a daily aggregate request rather than a change-readable record type. The companion reads the complete available range on first import, then relies on deterministic identities and idempotent server upserts when refreshing this aggregate.
 
 Source records are never destructively merged. A delete removes only the row with the same adapter and source identity. A surviving equivalent record from another adapter remains.
 
@@ -242,7 +242,7 @@ Health Connect retains its existing checkpoint per Health Connect record type. S
 6. Advance the provider-DataType high-water mark to the fixed upper bound only after every page and every source change through that bound is acknowledged as committed or already committed.
 7. If a read, upload, or acknowledgement fails, discard temporary page state, retain the old high-water mark, and repeat the overlapped range on the next run. No health payload queue is retained.
 8. Changes sharing the same timestamp are safe because the next run overlaps five minutes and record identity is stable. The checkpoint is the fixed query bound, never the maximum timestamp observed in a page.
-9. On first run or checkpoint loss, capture an initial upper bound, read at most the preceding 30 days as Personal State backfill policy, upload complete association manifests, and then process changes from that captured bound through a new bound. Thirty days is policy, not a Samsung permission limit.
+9. On first run or checkpoint loss, capture an initial upper bound, read the complete available Samsung history beginning at the product epoch, upload complete association manifests, and then process changes from that captured bound through a new bound.
 10. A source delete removes only its adapter-specific record family. Tombstones reject older replays. Empty association manifests remove every sleep-derived member.
 11. A reinstall imports a newly issued pairing file for the stable identity namespace, gets a new installation id, performs the bounded backfill and complete association reconciliation, and replays idempotently. Old installation availability is inactive.
 12. One adapter's failure never advances, clears, or rewrites another adapter's checkpoint.
@@ -260,7 +260,7 @@ Fixed presentation matrix:
 
 | Source/metric | Label rule |
 |---|---|
-| direct Wear heart rate | `live` only when event age is 60 seconds or less; otherwise `last recorded` or no display in the live card |
+| direct Wear heart rate | `live` only when event age is two seconds or less; otherwise no value in the live card |
 | Health Connect heart rate | never `live`; `recent record` through 15 minutes, then `last recorded` |
 | oxygen point or series | `recent record` through 2 hours, then `latest recorded` |
 | activity | `recent record` through 12 hours, then `latest recorded` |
@@ -362,7 +362,7 @@ The dashboard shows adapter, last phone read, last server upload, availability p
 - Supported Samsung records preserve native timing and documented semantics.
 - Unsupported, absent, denied, empty, and failed states are distinct from real values.
 - New Samsung metrics do not appear in any agent response without explicit configuration.
-- No metric is called live outside the direct Wear 60-second rule.
+- No metric is called live outside the direct Wear two-second rule.
 - No vendor finding is relabeled as a Personal State diagnosis.
 - A delete from one adapter cannot erase another adapter's record.
 - Public source and releases contain no proprietary Samsung SDK binary.

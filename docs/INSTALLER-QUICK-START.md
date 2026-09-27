@@ -43,9 +43,13 @@ The main installer starts this guided setup automatically. To rerun only the dev
 3. Choose **Pair new device** and enter the displayed address and code when setup asks.
 4. Enter the watch's normal wireless-debugging address when setup asks.
 5. Let setup install the phone app and then the matching watch app.
-6. Open Personal State once on each device and approve only the requested health permissions.
+6. Open Personal State on the phone, allow the health categories, older-history access, background access, and the Samsung Health categories you want included.
+7. Tap **Sync now** and leave the phone app open while the one-time full-history import completes.
+8. Open Personal State on the watch, allow all-time heart-rate access, and start monitoring.
 
 Android requires the wearer to confirm software installation and health permissions. The phone app cannot silently install software on a watch. The combined installer performs every step the platform permits automatically.
+
+With older-history access granted, the first sync imports every Health Connect record the platform makes available and performs a full Samsung Health Data SDK backfill. Without that optional permission, Health Connect limits the initial third-party history window to 30 days. Later syncs use change checkpoints instead of rereading the entire archive.
 
 For a future Google Play release, the phone and watch builds share one app identity and listing. Installing the phone app makes the matching watch app available for the paired watch; the user still confirms the watch installation.
 
@@ -87,5 +91,5 @@ After installation:
 1. The dashboard opens at `http://127.0.0.1:8766/`.
 2. Glucose shows a measurement time, received time, age, freshness, and provenance.
 3. The official Libre app remains responsible for alerts.
-4. Heart rate appears in the live position only when the sample is no more than 60 seconds old.
+4. Heart rate appears in the live position only when the direct watch sample is no more than two seconds old.
 5. Old or missing watch data is labeled clearly and never presented as live.
