@@ -80,10 +80,18 @@
             <span>Every value is labeled with its age and source</span>
           </div>
         </div>
+        <div id="glucose-stream-alert" class="sensor-alert" role="alert" hidden>
+          <div class="sensor-alert-icon"><svg><use href="#icon-alert"/></svg></div>
+          <div class="sensor-alert-copy">
+            <strong id="glucose-stream-alert-title">No current glucose data</strong>
+            <p id="glucose-stream-alert-detail">Waiting for a current Libre measurement.</p>
+          </div>
+          <button type="button" class="sensor-alert-action" data-timeline-focus>View history</button>
+        </div>
         <div class="current-band">
-          <div class="current-reading current-glucose" role="button" tabindex="0" data-timeline-focus aria-label="Open glucose history timeline">
+          <div id="current-glucose-card" class="current-reading current-glucose" role="button" tabindex="0" data-timeline-focus aria-label="Open glucose history timeline">
             <div class="vital-topline"><div class="vital-icon"><svg><use href="#icon-droplet"/></svg></div><div><div class="vital-name">Glucose</div><div class="reading-label"><span id="freshness-dot" class="status-dot"></span><span id="freshness-label">Loading</span></div></div></div>
-            <div class="reading-value"><span id="current-value">--</span><span class="unit">mg/dL</span></div>
+            <div class="reading-value"><span id="current-value">--</span><span id="current-glucose-unit" class="unit">mg/dL</span></div>
             <p id="current-time">No reading loaded</p>
             <div class="threshold-note" aria-live="polite">
               <span id="threshold-chip">80 mg/dL context</span>

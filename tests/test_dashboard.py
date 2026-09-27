@@ -9,6 +9,7 @@ from personal_state_mcp.dashboard import (
     DashboardApp,
     _comparison_summary,
     _downsample,
+    _glucose_stream_status,
     _heart_sync_status,
     _numeric_point_stats,
 )
@@ -90,9 +91,28 @@ def test_live_state_is_compact_and_contains_current_reading() -> None:
         payload = app.live_state()
 
         assert payload["current"]["reading"]["value_mg_dl"] == 104
+        assert payload["current"]["stream"]["status"] == "current"
+        assert payload["current"]["stream"]["current"] is True
         assert payload["watch"]["latest"] == {}
         assert "chart" not in payload
         assert "table" not in payload
+
+
+def test_glucose_stream_status_never_treats_stale_reading_as_current() -> None:
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    reading = make_reading(now - timedelta(hours=5), 121)
+    freshness = {
+        "status": "stale",
+        "measurement_age_seconds": 18_000,
+        "max_age_seconds": 600,
+    }
+
+    status = _glucose_stream_status(reading, freshness)
+
+    assert status["status"] == "stopped"
+    assert status["current"] is False
+    assert status["last_measurement_at"] == reading.measured_at.isoformat().replace("+00:00", "Z")
+    assert "may have ended" in status["message"]
 
 
 def test_downsample_preserves_extrema() -> None:
@@ -208,3 +228,11 @@ def test_dashboard_places_all_current_signals_before_history_charts() -> None:
     assert 'id="metric-dialog"' in html
     assert 'id="metric-history-chart"' in html
     assert 'id="timeline-panel"' in html
+    assert 'id="glucose-stream-alert"' in html
+    assert 'id="current-glucose-unit"' in html
+
+    javascript = (static_dir / "app.js").read_text(encoding="utf-8")
+    assert 'streamStatus === "stopped"' in javascript
+    assert '"No current data"' in javascript
+    assert "Last recorded:" in javascript
+    assert '"Glucose unavailable"' in javascript
