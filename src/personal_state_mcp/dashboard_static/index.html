@@ -42,7 +42,7 @@
         <div class="title-group">
           <div class="brand-mark"><svg><use href="#icon-activity"/></svg></div>
           <div>
-            <p class="eyebrow">Clinician Assist · Private health context</p>
+            <p class="eyebrow">Clinician Assist · Personal health record</p>
             <h1>Personal State</h1>
           </div>
         </div>
@@ -61,12 +61,19 @@
 
       <div id="app-message" class="app-message" role="status" aria-live="polite"></div>
 
+      <nav class="workspace-nav" aria-label="Dashboard sections">
+        <a class="is-active" href="#overview">Now</a>
+        <a href="#signals">Signals</a>
+        <a href="#timeline-panel">Trends</a>
+        <a href="#records" data-open-details="records">Evidence</a>
+      </nav>
+
       <section id="overview" class="view-section is-active" aria-labelledby="overview-title">
         <h2 id="overview-title" class="sr-only">Overview</h2>
         <div class="snapshot-heading">
           <div>
-            <p class="section-kicker">Your physiology at a glance</p>
-            <h2>What your sensors know right now</h2>
+            <p class="section-kicker">Current state</p>
+            <h2>Your physiology now</h2>
           </div>
           <div class="snapshot-status">
             <span id="watch-status-chip" class="state-chip">Connecting</span>
@@ -93,9 +100,9 @@
           </div>
         </div>
 
-        <section class="signal-board" aria-labelledby="signal-board-title">
+        <section id="signals" class="signal-board" aria-labelledby="signal-board-title">
           <div class="signal-board-heading">
-            <div><p class="section-kicker">Today, last night, and latest available</p><h2 id="signal-board-title">All connected health signals</h2></div>
+            <div><p class="section-kicker">Latest available records</p><h2 id="signal-board-title">Connected health signals</h2></div>
             <span id="signal-count" class="signal-count">Waiting for data</span>
           </div>
           <div id="watch-latest-grid" class="health-metric-grid" aria-label="Latest recorded watch and Samsung Health measurements"></div>
@@ -107,7 +114,7 @@
           </div>
         </section>
 
-        <div class="trends-heading">
+        <div class="trends-heading" id="trends">
           <div><p class="section-kicker">Patterns over time</p><h2>Glucose and heart rate together</h2></div>
         <div class="range-row">
           <div id="range-control" class="segmented-control" aria-label="History range">
@@ -219,6 +226,12 @@
         </div>
       </section>
 
+      <details id="records" class="evidence-drawer">
+        <summary>
+          <span class="evidence-summary-copy"><span class="section-kicker">Records and integrity</span><strong>Review the underlying evidence</strong></span>
+          <span class="evidence-summary-meta">Observations, coverage, exports, and provenance</span>
+        </summary>
+        <div class="evidence-body">
       <section id="watch" class="view-section is-active consolidated-section" aria-labelledby="watch-title">
         <div class="section-heading watch-heading">
           <div><p class="section-kicker">Galaxy Watch5 Pro · Samsung Health · Health Connect</p><h2 id="watch-title">Records and connections</h2></div>
@@ -309,6 +322,8 @@
           <div><strong>Not an alarm or treatment system</strong><p>Use the official Libre app and sensor for alerts and health decisions.</p></div>
         </div>
       </section>
+        </div>
+      </details>
     </main>
   </div>
 

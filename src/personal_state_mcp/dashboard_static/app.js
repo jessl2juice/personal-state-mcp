@@ -1161,6 +1161,35 @@
   }));
   $("#metric-dialog-close").addEventListener("click", () => $("#metric-dialog").close());
 
+  const workspaceNavLinks = $$(".workspace-nav a");
+  workspaceNavLinks.forEach((link) => link.addEventListener("click", () => {
+    const detailsId = link.dataset.openDetails;
+    if (detailsId) {
+      const details = document.getElementById(detailsId);
+      if (details) details.open = true;
+    }
+    workspaceNavLinks.forEach((candidate) => candidate.classList.toggle("is-active", candidate === link));
+  }));
+
+  const navTargets = [
+    ["overview", "#overview"],
+    ["signals", "#signals"],
+    ["timeline-panel", "#timeline-panel"],
+    ["records", "#records"],
+  ];
+  const navObserver = new IntersectionObserver((entries) => {
+    const visible = entries
+      .filter((entry) => entry.isIntersecting)
+      .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0];
+    if (!visible) return;
+    const href = navTargets.find(([id]) => id === visible.target.id)?.[1];
+    workspaceNavLinks.forEach((link) => link.classList.toggle("is-active", link.getAttribute("href") === href));
+  }, { rootMargin: "-15% 0px -68% 0px", threshold: [0, .15, .4] });
+  navTargets.forEach(([id]) => {
+    const target = document.getElementById(id);
+    if (target) navObserver.observe(target);
+  });
+
   const resizeObserver = new ResizeObserver(() => window.requestAnimationFrame(drawChart));
   resizeObserver.observe($("#chart-wrap"));
   window.setInterval(() => {
