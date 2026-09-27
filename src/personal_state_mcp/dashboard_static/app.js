@@ -634,10 +634,55 @@
     `).join("") : '<tr><td colspan="4">No active companion coverage reports yet.</td></tr>';
   }
 
+  function median(values) {
+    if (!values.length) return 0;
+    const ordered = [...values].sort((left, right) => left - right);
+    const middle = Math.floor(ordered.length / 2);
+    return ordered.length % 2
+      ? ordered[middle]
+      : (ordered[middle - 1] + ordered[middle]) / 2;
+  }
+
+  function collapseSegmentForDisplay(series, pixelSpacing) {
+    if (pixelSpacing <= 0 || series.length < 4) return series;
+    const buckets = [];
+    let bucket = [];
+    let bucketIndex = null;
+    const originX = series[0].x;
+    series.forEach((point) => {
+      const nextIndex = Math.floor((point.x - originX) / pixelSpacing);
+      if (bucket.length && nextIndex !== bucketIndex) {
+        buckets.push(bucket);
+        bucket = [];
+      }
+      bucketIndex = nextIndex;
+      bucket.push(point);
+    });
+    if (bucket.length) buckets.push(bucket);
+
+    return buckets.map((items) => ({
+      ...items[Math.floor(items.length / 2)],
+      x: items.reduce((total, point) => total + point.x, 0) / items.length,
+      y: median(items.map((point) => point.y)),
+      time: items.reduce((total, point) => total + point.time, 0) / items.length,
+    }));
+  }
+
+  function medianSmoothSegment(series, radius) {
+    if (radius < 1 || series.length < 3) return series;
+    return series.map((point, index) => {
+      const start = Math.max(0, index - radius);
+      const end = Math.min(series.length - 1, index + radius);
+      return {
+        ...point,
+        y: median(series.slice(start, end + 1).map((neighbor) => neighbor.y)),
+      };
+    });
+  }
+
   function smoothSegmentForDisplay(series, radius) {
     if (radius < 1 || series.length < 3) return series;
     return series.map((point, index) => {
-      if (index === 0 || index === series.length - 1) return point;
       let weightedY = 0;
       let totalWeight = 0;
       const start = Math.max(0, index - radius);
@@ -651,15 +696,25 @@
     });
   }
 
-  function strokeMonotoneSeries(ctx, points, gapLimitForPair, smoothingRadius = 0) {
+  function strokeMonotoneSeries(ctx, points, gapLimitForPair, options = {}) {
+    const {
+      pixelSpacing = 0,
+      medianRadius = 0,
+      smoothingRadius = 0,
+    } = options;
     const segments = [];
     let segment = [];
     points.forEach((point, index) => {
       const previous = points[index - 1];
       const gap = previous ? point.time - previous.time : 0;
+      const hasSegmentMetadata = previous
+        && point.point?.segment !== undefined
+        && previous.point?.segment !== undefined;
       const startsNewSegment = !previous
         || point.x <= previous.x
-        || gap > gapLimitForPair(previous, point);
+        || (hasSegmentMetadata
+          ? point.point.segment !== previous.point.segment
+          : gap > gapLimitForPair(previous, point));
       if (startsNewSegment && segment.length) {
         segments.push(segment);
         segment = [];
@@ -670,7 +725,9 @@
 
     ctx.beginPath();
     segments.forEach((rawSeries) => {
-      const series = smoothSegmentForDisplay(rawSeries, smoothingRadius);
+      const collapsed = collapseSegmentForDisplay(rawSeries, pixelSpacing);
+      const deNoised = medianSmoothSegment(collapsed, medianRadius);
+      const series = smoothSegmentForDisplay(deNoised, smoothingRadius);
       ctx.moveTo(series[0].x, series[0].y);
       if (series.length === 1) return;
       if (series.length === 2) {
@@ -726,7 +783,7 @@
     const wrap = $("#chart-wrap");
     const glucosePoints = state.payload?.chart || [];
     const heartPoints = state.payload?.watch?.heart_rate_samples || [];
-    $("#chart-heart-label").textContent = heartPoints.length ? "Heart rate · smoothed" : "Heart rate (none)";
+    $("#chart-heart-label").textContent = heartPoints.length ? "Heart rate · trend" : "Heart rate (none)";
     $("#chart-empty").hidden = glucosePoints.length > 0 || heartPoints.length > 0;
     if (!glucosePoints.length && !heartPoints.length) {
       const context = canvas.getContext("2d");
@@ -855,14 +912,11 @@
     ctx.lineWidth = 2.7;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
-    ctx.beginPath();
-    coords.forEach((coord, index) => {
-      const previous = coords[index - 1];
-      const gap = previous ? coord.time - previous.time : 0;
-      if (!previous || gap > 30 * 60 * 1000) ctx.moveTo(coord.x, coord.y);
-      else ctx.lineTo(coord.x, coord.y);
+    strokeMonotoneSeries(ctx, coords, () => 30 * 60 * 1000, {
+      pixelSpacing: 2.5,
+      medianRadius: 1,
+      smoothingRadius: 1,
     });
-    ctx.stroke();
 
     const heartCoords = heartPoints.map((point, index) => ({
       x: xScale(heartTimes[index]),
@@ -875,7 +929,11 @@
     ctx.lineWidth = 2.4;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
-    strokeMonotoneSeries(ctx, heartCoords, () => HEART_GRAPH_GAP_MS, 3);
+    strokeMonotoneSeries(ctx, heartCoords, () => HEART_GRAPH_GAP_MS, {
+      pixelSpacing: 2.5,
+      medianRadius: 1,
+      smoothingRadius: 2,
+    });
 
     [
       { points: coords, color: "#07856f" },
@@ -1060,10 +1118,17 @@
 
     const points = state.payload.watch.heart_rate_samples || [];
     if (!points.some((point) => point.time === sample.time)) {
+      const previous = points.at(-1);
+      const sampleTime = new Date(sample.time).getTime();
+      const previousTime = previous ? new Date(previous.time).getTime() : null;
+      const segment = previous
+        ? Number(previous.segment || 0) + (sampleTime - previousTime > HEART_GRAPH_GAP_MS ? 1 : 0)
+        : 0;
       points.push({
         time: sample.time,
         value: sample.value,
         attribution: heart.attribution?.state,
+        segment,
       });
       if (points.length > 1500) points.splice(0, points.length - 1500);
       state.payload.watch.heart_rate_samples = points;

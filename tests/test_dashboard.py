@@ -11,6 +11,7 @@ from personal_state_mcp.dashboard import (
     _downsample,
     _glucose_stream_status,
     _heart_sync_status,
+    _mark_numeric_segments,
     _numeric_point_stats,
 )
 from personal_state_mcp.models import GlucoseReading, Provenance
@@ -129,6 +130,20 @@ def test_downsample_preserves_extrema() -> None:
     assert 240 in values
 
 
+def test_heart_series_segments_preserve_real_gaps_before_downsampling() -> None:
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    points = [
+        {"time": now.isoformat(), "value": 72},
+        {"time": (now + timedelta(seconds=55)).isoformat(), "value": 74},
+        {"time": (now + timedelta(seconds=116)).isoformat(), "value": 76},
+    ]
+
+    marked = _mark_numeric_segments(points, max_gap_seconds=60)
+
+    assert [point["segment"] for point in marked] == [0, 0, 1]
+    assert all("segment" not in point for point in points)
+
+
 def test_heart_summary_and_comparison_report_actual_overlap() -> None:
     now = datetime.now(timezone.utc).replace(microsecond=0)
     glucose = [
@@ -236,3 +251,6 @@ def test_dashboard_places_all_current_signals_before_history_charts() -> None:
     assert '"No current data"' in javascript
     assert "Last recorded:" in javascript
     assert '"Glucose unavailable"' in javascript
+    assert "collapseSegmentForDisplay" in javascript
+    assert "medianSmoothSegment" in javascript
+    assert '"Heart rate · trend"' in javascript

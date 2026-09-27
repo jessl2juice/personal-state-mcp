@@ -140,6 +140,29 @@ def _downsample_numeric_points(
     return sampled
 
 
+def _mark_numeric_segments(
+    points: list[dict[str, Any]],
+    *,
+    max_gap_seconds: int,
+) -> list[dict[str, Any]]:
+    """Tag continuous runs so display downsampling cannot create false gaps."""
+    marked: list[dict[str, Any]] = []
+    segment = 0
+    previous_time: datetime | None = None
+    for point in points:
+        point_time = _parse_dt(point.get("time"))
+        if (
+            previous_time is not None
+            and point_time is not None
+            and (point_time - previous_time).total_seconds() > max_gap_seconds
+        ):
+            segment += 1
+        marked.append({**point, "segment": segment})
+        if point_time is not None:
+            previous_time = point_time
+    return marked
+
+
 def _gaps(readings: list[GlucoseReading], max_gap_minutes: int = 30) -> list[dict[str, Any]]:
     gaps: list[dict[str, Any]] = []
     for previous, current in zip(readings, readings[1:]):
@@ -526,7 +549,9 @@ class DashboardApp:
             "configured": bool(self.config.watch_device_id and self.config.watch_device_secret and self.config.watch_identifier_key),
             "last_upload": last_upload,
             "latest": latest_payload,
-            "heart_rate_samples": _downsample_numeric_points(heart_samples),
+            "heart_rate_samples": _downsample_numeric_points(
+                _mark_numeric_segments(heart_samples, max_gap_seconds=60)
+            ),
             "heart_rate_summary": heart_summary,
             "heart_rate_sync": _heart_sync_status(heart_sync_summary, last_upload, now),
             "comparison": _comparison_summary(glucose_readings or [], heart_samples),
