@@ -178,13 +178,36 @@
   }
 
   function renderCurrent(payload) {
-    const { reading, freshness, threshold_context: threshold } = payload.current;
-    const freshnessLabel = freshness.status === "fresh" ? "Fresh reading" : `${freshness.status[0].toUpperCase()}${freshness.status.slice(1)} reading`;
+    const { reading, freshness, threshold_context: threshold, stream = {} } = payload.current;
+    const streamStatus = stream.status || (freshness.status === "fresh" ? "current" : freshness.status === "recent" ? "delayed" : reading ? "stopped" : "unavailable");
+    const streamSaysCurrent = typeof stream.current === "boolean" ? stream.current : freshness.status === "fresh";
+    const glucoseIsCurrent = Boolean(reading) && streamSaysCurrent && freshness.status === "fresh";
+    const glucoseAge = formatAge(freshness.measurement_age_seconds);
+    const freshnessLabel = glucoseIsCurrent
+      ? `Current · ${glucoseAge}`
+      : streamStatus === "delayed"
+        ? `Update delayed · ${glucoseAge}`
+        : streamStatus === "stopped"
+          ? `Stream stopped · ${glucoseAge}`
+          : "No glucose data";
+    const glucoseCard = $("#current-glucose-card");
+    const glucoseAlert = $("#glucose-stream-alert");
+    glucoseCard.classList.toggle("is-unavailable", !glucoseIsCurrent);
+    glucoseAlert.hidden = glucoseIsCurrent;
     setText("#freshness-label", freshnessLabel);
-    setStatusClass($("#freshness-dot"), freshness.status);
-    setText("#current-value", reading ? reading.value_mg_dl : "--");
-    setText("#current-time", reading ? `Measured ${formatDate(reading.measured_at)} · received ${formatTime(reading.received_at)}` : "No reading loaded");
-    setText("#data-age", formatAge(freshness.measurement_age_seconds));
+    setStatusClass($("#freshness-dot"), glucoseIsCurrent ? "fresh" : "error");
+    setText("#current-value", glucoseIsCurrent ? reading.value_mg_dl : "No current data");
+    setText("#current-glucose-unit", glucoseIsCurrent ? "mg/dL" : "");
+    setText("#current-time", glucoseIsCurrent
+      ? `Measured ${formatDate(reading.measured_at)} · received ${formatTime(reading.received_at)}`
+      : reading
+        ? `Last recorded: ${reading.value_mg_dl} mg/dL at ${formatDate(reading.measured_at)} · historical only`
+        : "No glucose measurement has been received");
+    setText("#data-age", glucoseIsCurrent ? glucoseAge : `Last reading ${glucoseAge}`);
+    setText("#glucose-stream-alert-title", streamStatus === "delayed" ? "Glucose update delayed" : "No current glucose data");
+    setText("#glucose-stream-alert-detail", reading
+      ? `Last recorded: ${reading.value_mg_dl} mg/dL at ${formatDate(reading.measured_at)} (${glucoseAge}). ${stream.message || "The sensor may have ended or stopped sharing."}`
+      : stream.message || "No Libre measurement has been received. Check the Libre app and sensor connection.");
 
     const chip = $("#threshold-chip");
     chip.className = threshold.state || "";
@@ -230,14 +253,18 @@
         ? `Historical only: ${heartPresentation.value} bpm recorded ${formatDate(heartSampleTime(heart))} (${formatAge(heartRecency.measurement_age_seconds)})`
         : "No heart-rate sample has been received");
 
-    if (!heartIsCurrent) {
+    if (!glucoseIsCurrent) {
+      setText("#rail-status", streamStatus === "delayed" ? "Glucose update delayed" : "Glucose stream stopped");
+      setStatusClass($("#rail-status-dot"), "error");
+      setText("#rail-updated", reading ? `Last glucose ${glucoseAge}` : "No glucose reading available");
+    } else if (!heartIsCurrent) {
       setText("#rail-status", heartSync.status === "failure" ? "Heart-rate sync failed" : "Heart-rate data unavailable");
       setStatusClass($("#rail-status-dot"), "error");
-      setText("#rail-updated", reading ? `Glucose ${freshness.status} · heart rate unavailable` : "Current sensor data unavailable");
+      setText("#rail-updated", "Glucose current · heart rate unavailable");
     } else {
       setText("#rail-status", freshnessLabel);
-      setStatusClass($("#rail-status-dot"), freshness.status);
-      setText("#rail-updated", reading ? `Measured ${formatTime(reading.measured_at)}` : "No reading available");
+      setStatusClass($("#rail-status-dot"), "fresh");
+      setText("#rail-updated", `Glucose measured ${formatTime(reading.measured_at)}`);
       const cutoffDelay = Math.max(0, HEART_LIVE_MAX_AGE_SECONDS - heartAgeSeconds) * 1000 + 50;
       state.heartCutoffTimer = window.setTimeout(() => {
         heartCard.classList.add("is-unavailable");
@@ -542,7 +569,11 @@
     const watch = payload.watch || {};
     const latest = watch.latest || {};
     const status = $("#watch-status-chip");
-    if (!watch.enabled) {
+    const glucoseCurrent = payload.current?.stream?.current ?? payload.current?.freshness?.status === "fresh";
+    if (!glucoseCurrent) {
+      status.textContent = payload.current?.freshness?.status === "recent" ? "Glucose delayed" : "Glucose unavailable";
+      status.className = "state-chip error";
+    } else if (!watch.enabled) {
       status.textContent = "Setup pending";
       status.className = "state-chip";
     } else if (!watch.configured) {

@@ -88,14 +88,26 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-lineca
 .snapshot-status { display: flex; align-items: center; justify-content: flex-end; gap: 10px; color: var(--muted); font-size: 11px; }
 .state-chip, .comparison-chip, .privacy-badge, .availability-state { display: inline-flex; min-height: 30px; align-items: center; border: 1px solid var(--line-strong); border-radius: 999px; padding: 0 12px; background: white; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: none; white-space: nowrap; }
 .state-chip.below { border-color: #f1a59f; background: var(--coral-soft); color: #a1362d; }
+.state-chip.error { border-color: #f1a59f; background: var(--coral-soft); color: #a1362d; }
 .state-chip.near { border-color: #e9c774; background: var(--gold-soft); color: #805200; }
 .state-chip.above, .state-chip.ok { border-color: #89d6c3; background: var(--glucose-soft); color: #056b59; }
+
+.sensor-alert { display: flex; min-height: 64px; align-items: center; gap: 12px; margin: 0 0 14px; border: 1px solid #ef9a94; border-left: 5px solid var(--coral); border-radius: 8px; padding: 11px 13px; background: #fff6f5; color: var(--coral); box-shadow: var(--shadow-soft); }
+.sensor-alert-icon { display: grid; width: 36px; height: 36px; flex: 0 0 36px; place-items: center; border-radius: 8px; background: var(--coral-soft); }
+.sensor-alert-icon svg { width: 19px; height: 19px; }
+.sensor-alert-copy { min-width: 0; flex: 1; }
+.sensor-alert-copy strong { display: block; color: #8c1d18; font-family: "Google Sans", Roboto, Arial, sans-serif; font-size: 14px; font-weight: 700; }
+.sensor-alert-copy p { margin: 2px 0 0; color: #6f3b37; font-size: 10px; line-height: 1.4; }
+.sensor-alert-action { min-height: 36px; flex: 0 0 auto; border: 1px solid #d9837c; border-radius: 8px; padding: 0 13px; background: white; color: #8c1d18; font-size: 10px; font-weight: 800; }
+.sensor-alert-action:hover { background: var(--coral-soft); }
 
 .current-band { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
 .current-reading { min-width: 0; min-height: 136px; border: 1px solid var(--line); border-radius: 8px; background: white; box-shadow: var(--shadow-soft); }
 .current-reading { position: relative; overflow: hidden; padding: 15px 18px 13px; transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
 .current-reading:hover { border-color: var(--line-strong); box-shadow: 0 8px 24px rgba(31,45,61,.09); transform: translateY(-1px); }
 .current-glucose { border-left: 5px solid var(--glucose); background: #f7fcf8; color: var(--glucose); }
+.current-glucose.is-unavailable { border-left-color: var(--coral); background: #fffafa; color: var(--coral); }
+.current-glucose.is-unavailable .reading-value > span:first-child { font-size: 24px; line-height: 1.15; }
 .current-heart { border-left: 5px solid var(--heart); background: #fff8f8; color: var(--heart); }
 .current-heart.is-unavailable { color: var(--muted); background: #f8fafc; }
 .vital-topline { display: flex; align-items: center; gap: 9px; }
@@ -361,6 +373,8 @@ tbody tr:hover { background: var(--surface-container-low); }
   .snapshot-heading h2, .signal-board-heading h2, .trends-heading h2, .section-heading h2 { font-size: 21px; }
   .snapshot-status { width: 100%; justify-content: space-between; }
   .snapshot-status > span:last-child { max-width: 55%; text-align: right; }
+  .sensor-alert { align-items: flex-start; }
+  .sensor-alert-action { align-self: center; }
   .current-band { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
   .current-reading { min-height: 158px; padding: 14px; }
   .vital-icon { width: 32px; height: 32px; flex-basis: 32px; }
@@ -427,6 +441,8 @@ tbody tr:hover { background: var(--surface-container-low); }
 }
 
 @media (max-width: 430px) {
+  .sensor-alert { display: grid; grid-template-columns: auto minmax(0,1fr); }
+  .sensor-alert-action { width: 100%; grid-column: 1 / -1; }
   .signal-cards { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .health-metric-card { min-height: 146px; }
   .metric-value strong { font-size: 24px; }

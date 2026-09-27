@@ -291,6 +291,49 @@ def _heart_sync_status(
     }
 
 
+def _glucose_stream_status(
+    reading: GlucoseReading | None,
+    freshness: dict[str, Any],
+) -> dict[str, Any]:
+    """Describe whether the newest stored glucose can be presented as current."""
+    freshness_status = freshness.get("status")
+    age_seconds = freshness.get("measurement_age_seconds")
+    current_window_seconds = freshness.get("max_age_seconds")
+
+    if reading is None or freshness_status == "unavailable":
+        return {
+            "status": "unavailable",
+            "current": False,
+            "last_measurement_at": None,
+            "measurement_age_seconds": age_seconds,
+            "current_window_seconds": current_window_seconds,
+            "message": "No glucose measurements are stored.",
+        }
+    if freshness_status == "fresh":
+        return {
+            "status": "current",
+            "current": True,
+            "last_measurement_at": iso_utc(reading.measured_at),
+            "measurement_age_seconds": age_seconds,
+            "current_window_seconds": current_window_seconds,
+            "message": "Glucose data is inside the configured current-data window.",
+        }
+    if freshness_status == "recent":
+        status = "delayed"
+        message = "No new glucose measurement arrived inside the current-data window."
+    else:
+        status = "stopped"
+        message = "Glucose updates have stopped; the sensor may have ended or stopped sharing."
+    return {
+        "status": status,
+        "current": False,
+        "last_measurement_at": iso_utc(reading.measured_at),
+        "measurement_age_seconds": age_seconds,
+        "current_window_seconds": current_window_seconds,
+        "message": message,
+    }
+
+
 def _merged_watch_availability(
     rows: list[dict[str, Any]],
     active_installations: set[str],
@@ -640,6 +683,7 @@ class DashboardApp:
             self.config.glucose_threshold_mg_dl,
             self.config.near_threshold_margin_mg_dl,
         )
+        stream_status = _glucose_stream_status(latest, freshness)
         chart = _downsample(readings)
         history = self.store.history_overview()
         runs = self.store.collector_runs(limit=12)
@@ -665,6 +709,7 @@ class DashboardApp:
                 "reading": latest.public_dict() if latest else None,
                 "freshness": freshness,
                 "threshold_context": threshold_context,
+                "stream": stream_status,
             },
             "stats": _stats(
                 readings,
@@ -717,6 +762,7 @@ class DashboardApp:
             self.config.glucose_threshold_mg_dl,
             self.config.near_threshold_margin_mg_dl,
         )
+        stream_status = _glucose_stream_status(latest_glucose, freshness)
 
         latest_heart = next(
             (
@@ -740,6 +786,7 @@ class DashboardApp:
                 "reading": latest_glucose.public_dict() if latest_glucose else None,
                 "freshness": freshness,
                 "threshold_context": threshold_context,
+                "stream": stream_status,
             },
             "watch": {
                 "latest": {"vitals.heart_rate": heart_payload} if heart_payload else {},
