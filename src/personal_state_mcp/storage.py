@@ -299,6 +299,18 @@ class StateStore:
         finally:
             conn.close()
 
+    def backup_to(self, destination: Path) -> Path:
+        destination = Path(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        source = sqlite3.connect(self.path)
+        target = sqlite3.connect(destination)
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+            source.close()
+        return destination
+
     def upsert_glucose_readings(self, readings: Iterable[GlucoseReading]) -> int:
         inserted = 0
         with self.connect() as conn:
@@ -317,6 +329,84 @@ class StateStore:
                 if conn.total_changes > before:
                     inserted += 1
         return inserted
+
+    def import_glucose_readings(self, readings: Iterable[GlucoseReading]) -> dict[str, int]:
+        """Import historical readings while deduplicating across adapter boundaries."""
+        inserted = 0
+        duplicates = 0
+        with self.connect() as conn:
+            for reading in readings:
+                values = reading.persistence_tuple()
+                existing = conn.execute(
+                    """
+                    SELECT 1 FROM glucose_readings
+                    WHERE measured_at_utc = ? AND value_mg_dl = ?
+                    LIMIT 1
+                    """,
+                    (iso_utc(reading.measured_at), reading.value_mg_dl),
+                ).fetchone()
+                if existing:
+                    duplicates += 1
+                    continue
+                before = conn.total_changes
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO glucose_readings (
+                        id, adapter, source_patient_hash, value_mg_dl, trend, trend_raw,
+                        sample_type, measured_at_utc, received_at_utc, stored_at_utc,
+                        provenance_json, raw_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    values,
+                )
+                if conn.total_changes > before:
+                    inserted += 1
+                else:
+                    duplicates += 1
+        return {"inserted": inserted, "duplicates": duplicates}
+
+    def import_health_observations(self, observations: Iterable[HealthObservation]) -> dict[str, int]:
+        """Import historical health observations with adapter-independent exact deduplication."""
+        inserted = 0
+        duplicates = 0
+        with self.connect() as conn:
+            for observation in observations:
+                values = observation.persistence_tuple()
+                payload_json = values[4]
+                existing = conn.execute(
+                    """
+                    SELECT 1 FROM health_observations
+                    WHERE metric = ?
+                      AND IFNULL(measured_at_utc, '') = IFNULL(?, '')
+                      AND IFNULL(start_at_utc, '') = IFNULL(?, '')
+                      AND IFNULL(end_at_utc, '') = IFNULL(?, '')
+                      AND payload_json = ?
+                    LIMIT 1
+                    """,
+                    (observation.metric, values[5], values[6], values[7], payload_json),
+                ).fetchone()
+                if existing:
+                    duplicates += 1
+                    continue
+                before = conn.total_changes
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO health_observations (
+                        id, metric, category, record_kind, payload_json, measured_at_utc, start_at_utc,
+                        end_at_utc, observed_by_companion_at_utc, ingested_at_server_utc,
+                        upstream_last_modified_at_utc, source_package, recording_method, attribution_json,
+                        installation_hash, source_record_hash, zone_offset, start_zone_offset, end_zone_offset,
+                        schema_version, adapter_id, adapter_version, identity_namespace_id,
+                        association_hash, local_date
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    values,
+                )
+                if conn.total_changes > before:
+                    inserted += 1
+                else:
+                    duplicates += 1
+        return {"inserted": inserted, "duplicates": duplicates}
 
     def latest_glucose(self) -> GlucoseReading | None:
         with self.connect() as conn:
@@ -796,7 +886,7 @@ class StateStore:
             params.append(iso_utc(since))
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         direction = "DESC" if descending else "ASC"
-        params.extend([max(1, min(int(limit), 5000)), max(0, int(offset))])
+        params.extend([max(1, min(int(limit), 100_000)), max(0, int(offset))])
         with self.connect() as conn:
             rows = conn.execute(
                 f"""
@@ -811,9 +901,24 @@ class StateStore:
 
     def latest_watch_by_metric(self, metrics: Iterable[str] | None = None) -> dict[str, HealthObservation]:
         allowed = set(metrics) if metrics is not None else None
-        rows = self.watch_observations(limit=5000)
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                WITH ranked AS (
+                    SELECT health_observations.*,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY metric
+                               ORDER BY COALESCE(measured_at_utc, end_at_utc, start_at_utc) DESC, id DESC
+                           ) AS metric_rank
+                    FROM health_observations
+                )
+                SELECT * FROM ranked WHERE metric_rank = 1
+                ORDER BY COALESCE(measured_at_utc, end_at_utc, start_at_utc) DESC, id DESC
+                """
+            ).fetchall()
         result: dict[str, HealthObservation] = {}
         for observation in rows:
+            observation = self._row_to_observation(observation)
             if observation.metric in result or (allowed is not None and observation.metric not in allowed):
                 continue
             result[observation.metric] = observation

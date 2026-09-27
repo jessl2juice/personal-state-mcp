@@ -6,7 +6,7 @@
   const savedRange = localStorage.getItem("personal-state-range");
   const savedRangeVersion = localStorage.getItem("personal-state-range-version");
   const state = {
-    range: savedRangeVersion === rangePreferenceVersion && ["24h", "7d", "30d", "1y"].includes(savedRange) ? savedRange : "24h",
+    range: savedRangeVersion === rangePreferenceVersion && ["24h", "7d", "30d", "1y", "all"].includes(savedRange) ? savedRange : "24h",
     payload: null,
     chartPoints: [],
     chartSeries: { glucose: [], heart: [] },
@@ -23,10 +23,11 @@
     "7d": "Week · last 7 days",
     "30d": "Month · last 30 days",
     "1y": "Year · last 12 months",
+    "all": "All · complete imported history",
   };
 
-  const rangeHours = { "24h": 24, "7d": 168, "30d": 720, "1y": 8760 };
-  const rangeNames = { "24h": "Day", "7d": "Week", "30d": "Month", "1y": "Year" };
+  const rangeHours = { "24h": 24, "7d": 168, "30d": 720, "1y": 8760, "all": null };
+  const rangeNames = { "24h": "Day", "7d": "Week", "30d": "Month", "1y": "Year", "all": "All" };
   const HEART_LIVE_MAX_AGE_SECONDS = 2;
   const HEART_GRAPH_GAP_MS = 60 * 1000;
   const watchMetricLabels = {
@@ -52,10 +53,15 @@
     "cardiac.irregular_rhythm_notification": "Samsung irregular-rhythm notification",
     "activity.floors": "Floors",
     "activity.active_time": "Active time",
+    "activity.total_calories": "Total calories",
+    "activity.move_minutes": "Move minutes",
+    "activity.heart_points": "Heart Points",
+    "activity.heart_minutes": "Heart Minutes",
     "body.weight": "Weight",
     "body.body_fat": "Body fat",
     "body.basal_metabolic_rate": "Basal metabolic rate",
     "body.height": "Height",
+    "vitals.resting_heart_rate": "Resting heart rate",
     "nutrition.intake": "Nutrition",
   };
   const watchMetricOrder = [
@@ -71,14 +77,19 @@
     "cardiac.irregular_rhythm_notification",
     "activity.steps",
     "activity.active_time",
+    "activity.move_minutes",
+    "activity.heart_points",
+    "activity.heart_minutes",
     "activity.floors",
     "sleep.session",
     "activity.distance",
     "activity.exercise_calories",
+    "activity.total_calories",
     "activity.speed",
     "activity.exercise_session",
     "vitals.blood_pressure",
     "vitals.blood_glucose",
+    "vitals.resting_heart_rate",
     "activity.vo2_max",
     "activity.exercise_power",
     "body.weight",
@@ -119,11 +130,11 @@
 
   function formatChartTick(value) {
     const date = new Date(value);
-    if ((rangeHours[state.range] || 24) <= 24) return formatTime(value);
+    if (state.range !== "all" && (rangeHours[state.range] || 24) <= 24) return formatTime(value);
     return new Intl.DateTimeFormat(undefined, {
       month: "short",
       day: "numeric",
-      ...(state.range === "1y" ? { year: "2-digit" } : {}),
+      ...(["1y", "all"].includes(state.range) ? { year: "2-digit" } : {}),
     }).format(date);
   }
 
@@ -431,6 +442,7 @@
       android_samsung_health_data: "Samsung Health Data SDK",
       android_health_connect: "Samsung Health via Health Connect",
       wear_health_services: "Direct Galaxy Watch",
+      google_fit_takeout: "Google Fit historical export",
     };
     return labels[adapter] || adapter || "Source unavailable";
   }
@@ -498,7 +510,7 @@
 
     const metricGroup = (metric) => {
       if (["sleep.session", "sleep.samsung_session", "sleep.summary", "sleep.score", "vitals.oxygen_saturation_series", "vitals.skin_temperature", "wellness.energy_score"].includes(metric)) return "recovery";
-      if (["activity.steps", "activity.active_time", "activity.floors", "activity.distance", "activity.exercise_calories", "activity.speed", "activity.exercise_session", "activity.exercise_power", "activity.vo2_max"].includes(metric)) return "activity";
+      if (["activity.steps", "activity.active_time", "activity.move_minutes", "activity.heart_points", "activity.heart_minutes", "activity.floors", "activity.distance", "activity.exercise_calories", "activity.total_calories", "activity.speed", "activity.exercise_session", "activity.exercise_power", "activity.vo2_max"].includes(metric)) return "activity";
       if (["cardiac.irregular_rhythm_notification", "sleep.apnea_detected_sign"].includes(metric)) return "findings";
       return "health";
     };

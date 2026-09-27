@@ -58,6 +58,13 @@ RANGES: dict[str, float | None] = {
 MAX_SOURCE_READINGS = 200_000
 MAX_CHART_POINTS = 1_200
 HEART_LIVE_MAX_AGE_SECONDS = 2
+HISTORICAL_OBSERVATION_METRICS = {
+    "activity.total_calories",
+    "activity.move_minutes",
+    "activity.heart_points",
+    "activity.heart_minutes",
+    "vitals.resting_heart_rate",
+}
 WATCH_INGEST_REQUESTS_PER_MINUTE = 40
 AVAILABILITY_TTL = timedelta(hours=26)
 AVAILABILITY_PRECEDENCE = (
@@ -481,10 +488,11 @@ class DashboardApp:
             latest_payload[metric] = item
 
         heart_records = self.store.watch_observations(
-            metric="vitals.heart_rate", since=since, limit=5000
+            metric="vitals.heart_rate", since=since, limit=100_000
         )
         heart_samples: list[dict[str, Any]] = []
         direct_heart_samples: list[dict[str, Any]] = []
+        seen_heart_samples: set[tuple[str, float]] = set()
         for record in heart_records:
             for sample in record.payload.get("samples", []):
                 sample_time = _parse_dt(sample.get("time"))
@@ -497,7 +505,10 @@ class DashboardApp:
                     "attribution": record.attribution.get("state"),
                     "adapter": record.adapter_id,
                 }
-                heart_samples.append(point)
+                key = (point["time"], float(sample_value))
+                if key not in seen_heart_samples:
+                    heart_samples.append(point)
+                    seen_heart_samples.add(key)
                 if record.adapter_id == "wear_health_services":
                     direct_heart_samples.append(point)
         heart_samples.sort(key=lambda sample: sample["time"])
@@ -530,14 +541,14 @@ class DashboardApp:
         }
 
     def watch_metric_history(self, metric: str, range_key: str) -> dict[str, Any]:
-        allowed_metrics = set(OBSERVATION_METRICS) | SAMSUNG_OBSERVATION_METRICS
+        allowed_metrics = set(OBSERVATION_METRICS) | SAMSUNG_OBSERVATION_METRICS | HISTORICAL_OBSERVATION_METRICS
         if metric not in allowed_metrics:
             raise ValueError("unsupported_watch_metric")
         if range_key not in RANGES:
             range_key = "24h"
         now = utc_now()
         since = _range_since(range_key, now)
-        records = self.store.watch_observations(metric=metric, since=since, limit=5000)
+        records = self.store.watch_observations(metric=metric, since=since, limit=100_000)
         records.reverse()
         points: list[dict[str, Any]] = []
         for record in records:

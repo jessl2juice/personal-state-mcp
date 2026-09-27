@@ -15,6 +15,7 @@ from .secrets import (
     set_libre_password,
 )
 from .storage import StateStore
+from .history_import import inspect_history_export, parse_google_fit_takeout, parse_libreview_csv
 
 
 def _build_collector(store: StateStore, config):
@@ -111,6 +112,56 @@ def cmd_prune_history(args) -> int:
     return 0
 
 
+def cmd_inspect_history_export(args) -> int:
+    preview = inspect_history_export(Path(args.path))
+    print(json.dumps(preview.public_dict(), indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_import_libreview(args) -> int:
+    config = load_config()
+    timezone_name = args.timezone or config.source_timezone
+    if not timezone_name:
+        raise SystemExit("A source timezone is required. Pass --timezone or configure PERSONAL_STATE_MCP_SOURCE_TIMEZONE.")
+    readings, preview = parse_libreview_csv(Path(args.path), source_timezone=timezone_name)
+    payload = preview.public_dict()
+    payload["dry_run"] = bool(args.dry_run)
+    if args.dry_run:
+        payload["inserted"] = 0
+        payload["duplicates"] = 0
+    else:
+        store = StateStore(config.db_path)
+        backup_stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        backup_path = config.db_path.with_name(f"{config.db_path.name}.pre-history-import-{backup_stamp}.bak")
+        store.backup_to(backup_path)
+        result = store.import_glucose_readings(readings)
+        payload.update(result)
+        payload["database"] = str(config.db_path)
+        payload["backup"] = str(backup_path)
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_import_google_fit(args) -> int:
+    config = load_config()
+    observations, preview = parse_google_fit_takeout(Path(args.path))
+    payload = preview.public_dict()
+    payload["dry_run"] = bool(args.dry_run)
+    if args.dry_run:
+        payload["inserted"] = 0
+        payload["duplicates"] = 0
+    else:
+        store = StateStore(config.db_path)
+        backup_stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        backup_path = config.db_path.with_name(f"{config.db_path.name}.pre-google-fit-import-{backup_stamp}.bak")
+        store.backup_to(backup_path)
+        payload.update(store.import_health_observations(observations))
+        payload["database"] = str(config.db_path)
+        payload["backup"] = str(backup_path)
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Personal State MCP local utilities.")
     sub = parser.add_subparsers(required=True)
@@ -147,6 +198,30 @@ def build_parser() -> argparse.ArgumentParser:
     prune = sub.add_parser("prune-history", help="Delete readings older than a retention window.")
     prune.add_argument("--days", type=int)
     prune.set_defaults(func=cmd_prune_history)
+
+    inspect_export = sub.add_parser(
+        "inspect-history-export",
+        help="Identify a LibreView, Google Fit Takeout, or Samsung Health export without importing it.",
+    )
+    inspect_export.add_argument("path")
+    inspect_export.set_defaults(func=cmd_inspect_history_export)
+
+    libre_import = sub.add_parser(
+        "import-libreview",
+        help="Import and deduplicate an official LibreView glucose-history CSV.",
+    )
+    libre_import.add_argument("path")
+    libre_import.add_argument("--timezone", help="Timezone used by the device timestamps, such as America/Los_Angeles.")
+    libre_import.add_argument("--dry-run", action="store_true", help="Parse and report without changing the database.")
+    libre_import.set_defaults(func=cmd_import_libreview)
+
+    google_fit_import = sub.add_parser(
+        "import-google-fit",
+        help="Import and deduplicate a Google Fit Takeout ZIP or extracted directory.",
+    )
+    google_fit_import.add_argument("path")
+    google_fit_import.add_argument("--dry-run", action="store_true", help="Parse and report without changing the database.")
+    google_fit_import.set_defaults(func=cmd_import_google_fit)
 
     return parser
 

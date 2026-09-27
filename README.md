@@ -109,7 +109,7 @@ Open [http://127.0.0.1:8766](http://127.0.0.1:8766).
 The dashboard includes:
 
 - Current glucose and heart rate with units, measurement time, receipt or upload time, data age, and freshness. A numeric heart-rate value appears in the live card only while its direct watch measurement is no more than two seconds old; older values are withheld from the live position and remain available in history.
-- Day, week, month, and year views with Day as the default and separate glucose and heart-rate lanes on one recorded-time axis.
+- Day, week, month, year, and complete-history views with Day as the default and separate glucose and heart-rate lanes on one recorded-time axis.
 - Exact per-stream coverage and an explicit sync-failure state when a recent companion upload does not contain current heart-rate samples.
 - Descriptive glucose and heart-rate facts, context bands, data gaps, and a clinician-ready print view.
 - Latest-reading provenance, collector run history, and selected-range CSV export.
@@ -201,10 +201,14 @@ Pass the documented non-secret environment settings through the MCP host configu
 ## History Controls
 
 ```powershell
+personal-state import-libreview C:\path\to\glucose.csv --dry-run
+personal-state import-google-fit C:\path\to\takeout.zip --dry-run
 personal-state export-history .\glucose-history.jsonl
 personal-state prune-history --days 365
 personal-state delete-history --yes
 ```
+
+The official-export workflow, production backup behavior, supported Google Fit signals, and Samsung archive instructions are documented in [Historical Backfill](docs/08-HISTORICAL-BACKFILL.md).
 
 ## Test
 

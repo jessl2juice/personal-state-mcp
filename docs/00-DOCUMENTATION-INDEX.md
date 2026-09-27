@@ -2,7 +2,7 @@
 
 Document version: 1.0  
 Product status: Production pilot  
-Last verified: 2026-09-26  
+Last verified: 2026-09-27
 Document owner: Personal State project
 
 ## Purpose
@@ -30,6 +30,7 @@ The system is designed to help the user and the user's clinicians review recorde
 6. [Validation, Release, and Governance](06-VALIDATION-RELEASE-AND-GOVERNANCE.md) records the review gates, test plan, release checklist, change rules, and known limitations.
 7. [Distribution and Installer](07-DISTRIBUTION-AND-INSTALLER.md) defines release packaging, signing, update, and verification requirements.
 8. [Installer Quick Start](INSTALLER-QUICK-START.md) is the concise setup guide for a new user.
+9. [Historical Backfill](08-HISTORICAL-BACKFILL.md) covers LibreView, Google Fit Takeout, and Samsung Health archive imports with validation and deduplication requirements.
 
 The original detailed design, independent Fable review, resolution logs, and normative watch-ingest schema remain part of the engineering record:
 

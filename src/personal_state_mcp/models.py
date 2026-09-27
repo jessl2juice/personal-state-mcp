@@ -179,6 +179,18 @@ class HealthObservation:
         return self.measured_at or self.end_at or self.start_at or self.observed_by_companion_at
 
     def public_dict(self) -> dict[str, Any]:
+        if self.adapter_id == "google_fit_takeout":
+            vendor = "Google Fit"
+            source = "Google Fit Takeout historical export"
+        elif self.adapter_id == "android_samsung_health_data":
+            vendor = "Samsung"
+            source = "Samsung Health Data SDK"
+        elif self.adapter_id == "wear_health_services":
+            vendor = "Samsung"
+            source = "Direct Wear OS Health Services"
+        else:
+            vendor = "Samsung"
+            source = "Samsung Health via Health Connect"
         return {
             "id": self.id,
             "metric": self.metric,
@@ -198,10 +210,8 @@ class HealthObservation:
             "provenance": {
                 "adapter": self.adapter_id,
                 "adapter_version": self.adapter_version,
-                "vendor": "Samsung",
-                "source": "Samsung Health Data SDK" if self.adapter_id == "android_samsung_health_data" else (
-                    "Direct Wear OS Health Services" if self.adapter_id == "wear_health_services" else "Samsung Health via Health Connect"
-                ),
+                "vendor": vendor,
+                "source": source,
                 "source_package": self.source_package,
                 "recording_method": self.recording_method,
                 "attribution": self.attribution,
