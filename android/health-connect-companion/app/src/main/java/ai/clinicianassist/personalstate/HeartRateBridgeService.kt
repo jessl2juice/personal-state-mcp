@@ -1,15 +1,20 @@
 package ai.clinicianassist.personalstate
 
+import android.content.Context
 import android.os.Build
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
+import java.util.TreeMap
 import kotlin.math.abs
 
 class HeartRateBridgeService : WearableListenerService() {
@@ -26,10 +31,9 @@ class HeartRateBridgeService : WearableListenerService() {
             .forEach(::handlePayload)
     }
 
-    @Synchronized
     private fun handlePayload(payload: ByteArray) {
         val store = PairingStore(this)
-        val pairing = store.pairing() ?: run {
+        if (store.pairing() == null) {
             store.setLiveHeartStatus("Watch connected, but this phone is not paired for upload.")
             return
         }
@@ -38,23 +42,7 @@ class HeartRateBridgeService : WearableListenerService() {
             return
         }
         if (reading.measuredAt.toEpochMilli() <= store.lastUploadedHeartEpochMs()) return
-
-        val pendingPayload = HeartRatePayload.encode(reading)
-        store.setPendingHeartReading(pendingPayload)
-
-        // WearableListenerService keeps the process awake only for the callback. Complete the
-        // fast path before returning, then leave an encrypted WorkManager retry if it fails.
-        runCatching {
-            runBlocking(Dispatchers.IO) { LiveHeartUpload.upload(store, pairing, reading) }
-        }.onSuccess {
-            store.markHeartReadingUploaded(reading.measuredAt.toEpochMilli(), reading.bpm)
-            store.clearPendingHeartReading(pendingPayload)
-            store.setLiveHeartStatus("Live watch heart rate uploaded at ${reading.measuredAt}.")
-        }.onFailure { error ->
-            val reason = error.message?.replace(Regex("\\s+"), " ")?.take(180) ?: error::class.simpleName
-            store.setLiveHeartStatus("Live watch upload queued after failure: $reason")
-            HeartRateRetryWorker.enqueue(this)
-        }
+        LiveHeartUploadCoordinator.enqueue(this, reading)
     }
 
     companion object {
@@ -64,6 +52,57 @@ class HeartRateBridgeService : WearableListenerService() {
 }
 
 data class DirectHeartReading(val bpm: Double, val measuredAt: Instant, val model: String)
+
+object LiveHeartUploadCoordinator {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val lock = Any()
+    private val pending = TreeMap<Long, DirectHeartReading>()
+    private var uploadJob: Job? = null
+
+    fun enqueue(context: Context, reading: DirectHeartReading) {
+        val appContext = context.applicationContext
+        synchronized(lock) {
+            pending[reading.measuredAt.toEpochMilli()] = reading
+            if (uploadJob?.isActive != true) {
+                uploadJob = scope.launch { drain(appContext) }
+            }
+        }
+    }
+
+    private suspend fun drain(context: Context) {
+        val store = PairingStore(context)
+        val pairing = store.pairing() ?: run {
+            store.setLiveHeartStatus("Watch connected, but this phone is not paired for upload.")
+            return
+        }
+        while (true) {
+            val readings = synchronized(lock) {
+                if (pending.isEmpty()) return
+                pending.values.toList().also { pending.clear() }
+            }
+            val latest = readings.last()
+            val pendingPayload = HeartRatePayload.encode(latest)
+            store.setPendingHeartReading(pendingPayload)
+            runCatching { LiveHeartUpload.upload(store, pairing, readings) }
+                .onSuccess {
+                    store.markHeartReadingUploaded(latest.measuredAt.toEpochMilli(), latest.bpm)
+                    store.clearPendingHeartReading(pendingPayload)
+                    store.setLiveHeartStatus("Live watch heart rate uploaded at ${latest.measuredAt}.")
+                }
+                .onFailure { error ->
+                    val newest = synchronized(lock) {
+                        pending.values.lastOrNull()?.also { pending.clear() }
+                    }
+                    if (newest != null) store.setPendingHeartReading(HeartRatePayload.encode(newest))
+                    val reason = error.message?.replace(Regex("\\s+"), " ")?.take(180)
+                        ?: error::class.simpleName
+                    store.setLiveHeartStatus("Live watch upload queued after failure: $reason")
+                    HeartRateRetryWorker.enqueue(context)
+                    return
+                }
+        }
+    }
+}
 
 object HeartRatePayload {
     fun parse(
@@ -90,11 +129,33 @@ object HeartRatePayload {
 
 object LiveHeartUpload {
     suspend fun upload(store: PairingStore, pairing: PairingConfig, reading: DirectHeartReading) {
+        upload(store, pairing, listOf(reading))
+    }
+
+    suspend fun upload(store: PairingStore, pairing: PairingConfig, readings: List<DirectHeartReading>) {
+        require(readings.isNotEmpty())
+        val ordered = readings
+            .distinctBy { it.measuredAt.toEpochMilli() }
+            .sortedBy { it.measuredAt }
         val observedAt = Instant.now()
+        val observations = ordered.map { reading -> heartObservation(reading, observedAt) }
+        val availability = AvailabilityReport(
+            metric = "vitals.heart_rate",
+            state = "available",
+            evidence = "Direct Wear OS heart-rate samples were received from the paired watch.",
+            checkedAt = observedAt,
+            windowStart = ordered.first().measuredAt,
+            windowEnd = ordered.last().measuredAt,
+        )
+        val batch = WatchBatch(store.installationId(), observations.map(::upsert), listOf(availability))
+        check(UploadClient().upload(pairing, batch))
+    }
+
+    private fun heartObservation(reading: DirectHeartReading, observedAt: Instant): JSONObject {
         val model = reading.model.take(80)
         val watchConfirmed = model.startsWith("SM-R9", ignoreCase = true) ||
             model.contains("Watch5", ignoreCase = true)
-        val observation = JSONObject()
+        return JSONObject()
             .put("record_id", "wear-heart-${reading.measuredAt.toEpochMilli()}")
             .put("metric", "vitals.heart_rate")
             .put("record_kind", "series")
@@ -115,15 +176,5 @@ object LiveHeartUpload {
                     .put("value", reading.bpm)
                     .put("unit", "bpm"),
             )))
-        val availability = AvailabilityReport(
-            metric = "vitals.heart_rate",
-            state = "available",
-            evidence = "A direct Wear OS heart-rate sample was received from the paired watch.",
-            checkedAt = observedAt,
-            windowStart = reading.measuredAt,
-            windowEnd = reading.measuredAt,
-        )
-        val batch = WatchBatch(store.installationId(), listOf(upsert(observation)), listOf(availability))
-        check(UploadClient().upload(pairing, batch))
     }
 }
