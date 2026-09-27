@@ -112,6 +112,16 @@ CREATE TABLE IF NOT EXISTS device_sync_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_device_sync_received ON device_sync_runs(received_at_utc DESC);
 
+CREATE TABLE IF NOT EXISTS live_heart_demand (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    revision INTEGER NOT NULL,
+    requested_until_utc TEXT NOT NULL,
+    updated_at_utc TEXT NOT NULL
+);
+INSERT OR IGNORE INTO live_heart_demand (
+    singleton, revision, requested_until_utc, updated_at_utc
+) VALUES (1, 0, '1970-01-01T00:00:00Z', '1970-01-01T00:00:00Z');
+
 CREATE TABLE IF NOT EXISTS watch_availability (
     installation_hash TEXT NOT NULL,
     metric TEXT NOT NULL,
@@ -310,6 +320,29 @@ class StateStore:
             target.close()
             source.close()
         return destination
+
+    def request_live_heart(self, now: datetime, lease_seconds: int = 20) -> dict[str, Any]:
+        requested_until = now + timedelta(seconds=max(10, min(lease_seconds, 60)))
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE live_heart_demand
+                SET revision = revision + 1, requested_until_utc = ?, updated_at_utc = ?
+                WHERE singleton = 1
+                """,
+                (iso_utc(requested_until), iso_utc(now)),
+            )
+            row = conn.execute(
+                "SELECT revision, requested_until_utc, updated_at_utc FROM live_heart_demand WHERE singleton = 1"
+            ).fetchone()
+        return dict(row)
+
+    def live_heart_demand(self) -> dict[str, Any]:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT revision, requested_until_utc, updated_at_utc FROM live_heart_demand WHERE singleton = 1"
+            ).fetchone()
+        return dict(row)
 
     def upsert_glucose_readings(self, readings: Iterable[GlucoseReading]) -> int:
         inserted = 0

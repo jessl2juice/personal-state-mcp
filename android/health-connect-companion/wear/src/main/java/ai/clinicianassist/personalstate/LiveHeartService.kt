@@ -28,12 +28,9 @@ import androidx.health.services.client.data.ExerciseLapSummary
 import androidx.health.services.client.data.ExerciseTrackedStatus
 import androidx.health.services.client.data.ExerciseType
 import androidx.health.services.client.data.ExerciseUpdate
-import com.google.android.gms.wearable.Wearable
-import com.google.android.gms.wearable.PutDataRequest
 import com.google.common.util.concurrent.FutureCallback
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.MoreExecutors
-import org.json.JSONObject
 import java.time.Instant
 import kotlin.math.roundToInt
 
@@ -43,12 +40,24 @@ class LiveHeartService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var startInProgress = false
     private var recoveryInProgress = false
-    private var lastSentElapsedMs = 0L
     private var lastSampleEpochMs = 0L
     private var lastSampleElapsedMs = 0L
     private var serviceStartedElapsedMs = 0L
+    private var liveUntilElapsedMs = 0L
+    private var lastNotificationElapsedMs = 0L
+    private var exerciseEndRequested = false
 
     private val retryExercise = Runnable { ensureExercise() }
+    private val stopWhenLeaseEnds = object : Runnable {
+        override fun run() {
+            val remaining = liveUntilElapsedMs - SystemClock.elapsedRealtime()
+            if (remaining <= 0L) {
+                endExerciseAndStop("Battery-safe all-day monitoring active")
+            } else {
+                handler.postDelayed(this, remaining)
+            }
+        }
+    }
     private val streamWatchdog = object : Runnable {
         override fun run() {
             val reference = maxOf(lastSampleElapsedMs, serviceStartedElapsedMs)
@@ -63,7 +72,7 @@ class LiveHeartService : Service() {
 
     private val callback = object : ExerciseUpdateCallback {
         override fun onRegistered() {
-            writeStatus("Starting continuous heart-rate monitoring")
+            writeStatus("Starting on-demand live heart rate")
             ensureExercise()
         }
 
@@ -80,20 +89,25 @@ class LiveHeartService : Service() {
                 return
             }
 
-            val sample = update.latestMetrics.getData(DataType.HEART_RATE_BPM).lastOrNull() ?: return
-            val bpm = sample.value
-            if (!bpm.isFinite() || bpm !in 20.0..240.0) return
             val bootInstant = Instant.now().minusMillis(SystemClock.elapsedRealtime())
-            val measuredAt = sample.getTimeInstant(bootInstant)
-            val measuredEpochMs = measuredAt.toEpochMilli()
-            if (measuredEpochMs <= lastSampleEpochMs) return
-            lastSampleEpochMs = measuredEpochMs
-            lastSampleElapsedMs = SystemClock.elapsedRealtime()
-            writeSample(bpm.roundToInt(), measuredEpochMs, "Live to phone")
-            updateNotification(bpm.roundToInt())
-            if (SystemClock.elapsedRealtime() - lastSentElapsedMs >= SEND_INTERVAL_MS) {
-                lastSentElapsedMs = SystemClock.elapsedRealtime()
+            val samples = update.latestMetrics.getData(DataType.HEART_RATE_BPM)
+                .map { it.value to it.getTimeInstant(bootInstant) }
+                .filter { (bpm, _) -> bpm.isFinite() && bpm in 20.0..240.0 }
+                .sortedBy { (_, measuredAt) -> measuredAt }
+            var latestBpm: Double? = null
+            for ((bpm, measuredAt) in samples) {
+                val measuredEpochMs = measuredAt.toEpochMilli()
+                if (measuredEpochMs <= lastSampleEpochMs) continue
+                lastSampleEpochMs = measuredEpochMs
+                lastSampleElapsedMs = SystemClock.elapsedRealtime()
+                latestBpm = bpm
+                writeSample(bpm.roundToInt(), measuredEpochMs, "Live to phone")
                 sendToPhone(bpm, measuredAt)
+            }
+            val bpm = latestBpm ?: return
+            if (SystemClock.elapsedRealtime() - lastNotificationElapsedMs >= NOTIFICATION_INTERVAL_MS) {
+                lastNotificationElapsedMs = SystemClock.elapsedRealtime()
+                updateNotification(bpm.roundToInt())
             }
         }
 
@@ -102,7 +116,7 @@ class LiveHeartService : Service() {
         override fun onAvailabilityChanged(dataType: DataType<*, *>, availability: Availability) {
             if (dataType != DataType.HEART_RATE_BPM) return
             val status = when (availability.toString()) {
-                "AVAILABLE" -> "Continuous heart-rate monitoring active"
+                "AVAILABLE" -> "On-demand live heart rate active"
                 "UNAVAILABLE_DEVICE_OFF_BODY" -> "Sensor needs wrist contact"
                 else -> "Heart sensor: $availability"
             }
@@ -123,18 +137,31 @@ class LiveHeartService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             preferences().edit().putBoolean(KEY_MONITORING_REQUESTED, false).apply()
-            endExerciseAndStop()
+            endExerciseAndStop("Battery-safe all-day monitoring active")
             return START_NOT_STICKY
         }
+        val durationMs = intent?.getLongExtra(EXTRA_LIVE_DURATION_MS, DEFAULT_LIVE_SESSION_MS)
+            ?.coerceIn(MIN_LIVE_SESSION_MS, MAX_LIVE_SESSION_MS)
+            ?: DEFAULT_LIVE_SESSION_MS
+        liveUntilElapsedMs = maxOf(liveUntilElapsedMs, SystemClock.elapsedRealtime() + durationMs)
         preferences().edit().putBoolean(KEY_MONITORING_REQUESTED, true).apply()
+        runCatching {
+            HealthServices.getClient(this).passiveMonitoringClient.clearPassiveListenerServiceAsync()
+        }
+        handler.removeCallbacks(stopWhenLeaseEnds)
+        handler.post(stopWhenLeaseEnds)
         ensureExercise()
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
-        preferences().edit().putBoolean(KEY_SERVICE_ACTIVE, false).apply()
+        preferences().edit()
+            .putBoolean(KEY_SERVICE_ACTIVE, false)
+            .putBoolean(KEY_MONITORING_REQUESTED, false)
+            .apply()
         exerciseClient.clearUpdateCallbackAsync(callback)
+        if (!exerciseEndRequested) runCatching { exerciseClient.endExerciseAsync() }
         super.onDestroy()
     }
 
@@ -150,7 +177,7 @@ class LiveHeartService : Service() {
 
     @SuppressLint("WrongConstant", "RestrictedApi")
     private fun ensureExercise() {
-        if (!preferences().getBoolean(KEY_MONITORING_REQUESTED, true) || startInProgress) return
+        if (!preferences().getBoolean(KEY_MONITORING_REQUESTED, false) || startInProgress) return
         if (!hasLivePermission(this)) {
             writeStatus("Heart-rate permission is required")
             return
@@ -163,7 +190,7 @@ class LiveHeartService : Service() {
                     startInProgress = false
                     when (info?.exerciseTrackedStatus) {
                         ExerciseTrackedStatus.OWNED_EXERCISE_IN_PROGRESS -> {
-                            writeStatus("Continuous heart-rate monitoring active")
+                            writeStatus("On-demand live heart rate active")
                         }
                         ExerciseTrackedStatus.OTHER_APP_IN_PROGRESS -> {
                             writeStatus("Another workout is active; monitoring will resume afterward")
@@ -197,7 +224,7 @@ class LiveHeartService : Service() {
             object : FutureCallback<Void> {
                 override fun onSuccess(result: Void?) {
                     startInProgress = false
-                    writeStatus("Continuous heart-rate monitoring active")
+                    writeStatus("On-demand live heart rate active")
                 }
 
                 override fun onFailure(throwable: Throwable) {
@@ -265,55 +292,30 @@ class LiveHeartService : Service() {
         handler.postDelayed({ registerCallback() }, RECOVERY_SETTLE_MS)
     }
 
-    private fun endExerciseAndStop() {
+    private fun endExerciseAndStop(finalStatus: String) {
+        if (exerciseEndRequested) return
+        exerciseEndRequested = true
         handler.removeCallbacksAndMessages(null)
         Futures.addCallback(
             exerciseClient.endExerciseAsync(),
             object : FutureCallback<Void> {
-                override fun onSuccess(result: Void?) = stopNow()
-                override fun onFailure(throwable: Throwable) = stopNow()
+                override fun onSuccess(result: Void?) = stopNow(finalStatus)
+                override fun onFailure(throwable: Throwable) = stopNow(finalStatus)
             },
             mainExecutor,
         )
     }
 
-    private fun stopNow() {
-        writeStatus("Monitoring stopped")
+    private fun stopNow(finalStatus: String) {
+        preferences().edit().putBoolean(KEY_MONITORING_REQUESTED, false).apply()
+        writeStatus(finalStatus)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+        PassiveHeartMonitor.register(this)
     }
 
     private fun sendToPhone(bpm: Double, measuredAt: Instant) {
-        val payload = JSONObject()
-            .put("bpm", bpm)
-            .put("measured_at", measuredAt.toString())
-            .put("device_model", Build.MODEL)
-            .toString()
-            .toByteArray(Charsets.UTF_8)
-
-        val dataRequest = PutDataRequest.create(MESSAGE_PATH).apply {
-            data = payload
-            setUrgent()
-        }
-        Wearable.getDataClient(this)
-            .putDataItem(dataRequest)
-            .addOnFailureListener { writeStatus("Live buffered; waiting for phone") }
-
-        Wearable.getNodeClient(this).connectedNodes
-            .addOnSuccessListener { nodes ->
-                val targets = nodes.filter { it.isNearby }.ifEmpty { nodes }
-                if (targets.isEmpty()) {
-                    writeStatus("Monitoring active; waiting for phone")
-                    return@addOnSuccessListener
-                }
-                targets.forEach { node ->
-                    Wearable.getMessageClient(this)
-                        .sendMessage(node.id, MESSAGE_PATH, payload)
-                        .addOnSuccessListener { writeStatus("Live to phone") }
-                        .addOnFailureListener { writeStatus("Monitoring active; waiting for phone") }
-                }
-            }
-            .addOnFailureListener { writeStatus("Monitoring active; waiting for phone") }
+        HeartRateRelay.send(this, bpm, measuredAt, urgent = true, status = ::writeStatus)
     }
 
     private fun createNotificationChannel() {
@@ -398,16 +400,22 @@ class LiveHeartService : Service() {
         private const val WATCHDOG_INTERVAL_MS = 15_000L
         private const val STALE_STREAM_MS = 45_000L
         private const val RECOVERY_SETTLE_MS = 1_500L
-        private const val SEND_INTERVAL_MS = 1_000L
-        private const val MESSAGE_PATH = "/personal-state/heart-rate/v1"
+        private const val EXTRA_LIVE_DURATION_MS = "live_duration_ms"
         private const val READ_HEART_RATE = "android.permission.health.READ_HEART_RATE"
         private const val READ_HEALTH_DATA_IN_BACKGROUND = "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND"
         private const val BODY_SENSORS_BACKGROUND = "android.permission.BODY_SENSORS_BACKGROUND"
 
-        fun start(context: Context) {
+        private const val DEFAULT_LIVE_SESSION_MS = 30_000L
+        private const val MIN_LIVE_SESSION_MS = 10_000L
+        private const val MAX_LIVE_SESSION_MS = 5 * 60_000L
+        private const val NOTIFICATION_INTERVAL_MS = 15_000L
+
+        fun start(context: Context, durationMs: Long = DEFAULT_LIVE_SESSION_MS) {
             context.getSharedPreferences(PREFS, MODE_PRIVATE)
                 .edit().putBoolean(KEY_MONITORING_REQUESTED, true).apply()
-            val intent = Intent(context, LiveHeartService::class.java).setAction(ACTION_START)
+            val intent = Intent(context, LiveHeartService::class.java)
+                .setAction(ACTION_START)
+                .putExtra(EXTRA_LIVE_DURATION_MS, durationMs)
             ContextCompat.startForegroundService(context, intent)
         }
 
@@ -422,12 +430,12 @@ class LiveHeartService : Service() {
             val preferences = context.getSharedPreferences(PREFS, MODE_PRIVATE)
             val lastBpm = preferences.getInt(KEY_LAST_BPM, -1).takeIf { it > 0 }
             return Snapshot(
-                monitoringRequested = preferences.getBoolean(KEY_MONITORING_REQUESTED, true),
+                monitoringRequested = preferences.getBoolean(KEY_MONITORING_REQUESTED, false),
                 serviceActive = preferences.getBoolean(KEY_SERVICE_ACTIVE, false),
                 lastBpm = lastBpm,
                 lastSampleEpochMs = preferences.getLong(KEY_LAST_SAMPLE_EPOCH_MS, 0L),
-                status = preferences.getString(KEY_STATUS, "Starting continuous monitoring")
-                    ?: "Starting continuous monitoring",
+                status = preferences.getString(KEY_STATUS, "Battery-safe monitoring is ready")
+                    ?: "Battery-safe monitoring is ready",
             )
         }
 
@@ -445,8 +453,18 @@ class LiveHeartService : Service() {
         fun hasBackgroundPermission(context: Context): Boolean = Build.VERSION.SDK_INT < 33 ||
             context.checkSelfPermission(backgroundPermission()) == PackageManager.PERMISSION_GRANTED
 
-        fun shouldResume(context: Context): Boolean =
+        fun writeSharedStatus(context: Context, status: String) {
             context.getSharedPreferences(PREFS, MODE_PRIVATE)
-                .getBoolean(KEY_MONITORING_REQUESTED, true)
+                .edit().putString(KEY_STATUS, status).apply()
+        }
+
+        fun recordSharedSample(context: Context, bpm: Int, measuredAtEpochMs: Long, status: String) {
+            context.getSharedPreferences(PREFS, MODE_PRIVATE)
+                .edit()
+                .putInt(KEY_LAST_BPM, bpm)
+                .putLong(KEY_LAST_SAMPLE_EPOCH_MS, measuredAtEpochMs)
+                .putString(KEY_STATUS, status)
+                .apply()
+        }
     }
 }

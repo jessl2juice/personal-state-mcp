@@ -106,7 +106,8 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         if (::store.isInitialized && store.pairing() != null) {
-            WatchRecoveryMessenger.requestResume(this)
+            WatchRecoveryMessenger.requestPassive(this)
+            LiveDemandService.start(this)
         }
         lifecycleScope.launch { refreshStatus() }
     }

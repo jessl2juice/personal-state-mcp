@@ -18,8 +18,8 @@ android {
         applicationId = "ai.clinicianassist.personalstate"
         minSdk = if (samsungSdkAar == null) 28 else 29
         targetSdk = 35
-        versionCode = 40100
-        versionName = "0.4.1"
+        versionCode = 40200
+        versionName = "0.4.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

@@ -56,7 +56,7 @@ The detailed findings and resolutions remain in the engineering review documents
 
 ### Watch companion 0.4.0
 
-- Foreground continuous heart-rate collection through Health Services.
+- Battery-safe passive heart-rate collection plus lease-bounded foreground live collection through Health Services.
 - Five-second screen-off batching, no GPS.
 - Immediate message plus urgent latest-value Data Item delivery.
 - 45-second stalled-stream watchdog and safe exercise restart.
@@ -165,7 +165,7 @@ The following changes require explicit user approval and a focused security/safe
 - Samsung Health does not export every Watch5 Pro metric to Health Connect.
 - Samsung stress, resting heart rate, HRV, skin temperature, floors, and active-time summary are unavailable unless a separately reviewed adapter supplies them.
 - The current Windows production tasks depend on a signed-in interactive session.
-- Direct live heart monitoring may use additional watch battery and pauses while another exercise application owns Health Services.
+- Direct live heart monitoring uses additional watch battery only while an MCP or dashboard lease is active, and pauses while another exercise application owns Health Services.
 - The system can report companion read and upload status, but it cannot generally prove Samsung or watch synchronization state.
 
 ## Future adapter policy

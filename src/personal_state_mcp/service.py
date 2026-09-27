@@ -69,6 +69,8 @@ class HealthService:
         decision = self.access_policy.check(self.store, self.config.host_id, now)
         self.store.record_access(self.config.host_id, tool, decision.decision, decision.reason, now)
         if decision.allowed:
+            if self.config.watch_enabled:
+                self.store.request_live_heart(now, lease_seconds=20)
             return None
         return ErrorInfo(decision.reason, f"Health data access was {decision.decision}: {decision.reason}.", retryable=False)
 

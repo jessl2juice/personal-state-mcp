@@ -134,6 +134,47 @@ def signed_request(payload: dict, now: datetime, nonce: str | None = None) -> tu
     return body, headers
 
 
+def signed_demand_headers(now: datetime) -> dict[str, str]:
+    timestamp = str(int(now.timestamp()))
+    nonce = f"demand-{uuid4()}"
+    batch_id = f"live-demand-{nonce}"
+    return {
+        "x-psm-device-id": DEVICE_ID,
+        "x-psm-timestamp": timestamp,
+        "x-psm-nonce": nonce,
+        "x-psm-batch-id": batch_id,
+        "x-psm-signature": upload_signature(DEVICE_SECRET, timestamp, nonce, batch_id, b""),
+    }
+
+
+def test_mcp_access_creates_a_signed_short_live_heart_lease() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        cfg = config(Path(directory) / "state.db")
+        app = DashboardApp(cfg)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        service = HealthService(config=cfg, store=app.store, clock=lambda: now)
+
+        before = app.store.live_heart_demand()
+        service.watch()
+        demand = app.store.live_heart_demand()
+
+        assert demand["revision"] == before["revision"] + 1
+        requested_until = datetime.fromisoformat(demand["requested_until_utc"].replace("Z", "+00:00"))
+        assert requested_until == now + timedelta(seconds=20)
+
+        status, response = app.poll_live_heart_demand(
+            signed_demand_headers(datetime.now(timezone.utc).replace(microsecond=0)),
+            after_revision=int(before["revision"]),
+        )
+
+        assert status == 200
+        assert response["live_requested"] is True
+        assert 1 <= response["lease_seconds"] <= 20
+
+        denied_status, _ = app.poll_live_heart_demand({}, after_revision=0)
+        assert denied_status == 401
+
+
 def test_signed_ingest_is_idempotent_and_stress_has_no_observation() -> None:
     with tempfile.TemporaryDirectory() as directory:
         app = DashboardApp(config(Path(directory) / "state.db"))

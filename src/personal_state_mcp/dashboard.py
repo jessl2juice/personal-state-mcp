@@ -693,6 +693,50 @@ class DashboardApp:
             code = str(exc) if str(exc) in conflict_codes else "invalid_payload"
             return HTTPStatus.CONFLICT if code in conflict_codes else HTTPStatus.BAD_REQUEST, {"error": code}
 
+    def request_live_heart(self) -> dict[str, Any]:
+        return self.store.request_live_heart(utc_now(), lease_seconds=20)
+
+    def poll_live_heart_demand(
+        self,
+        headers: dict[str, str],
+        after_revision: int,
+    ) -> tuple[int, dict[str, Any]]:
+        now = utc_now()
+        if not self.config.watch_device_id or not self.config.watch_device_secret:
+            return HTTPStatus.SERVICE_UNAVAILABLE, {"error": "watch_ingest_not_configured"}
+        device_id = headers.get("x-psm-device-id", "")
+        timestamp = headers.get("x-psm-timestamp", "")
+        nonce = headers.get("x-psm-nonce", "")
+        batch_id = headers.get("x-psm-batch-id", "")
+        supplied_signature = headers.get("x-psm-signature", "")
+        if device_id != self.config.watch_device_id or not signature_matches(
+            self.config.watch_device_secret,
+            timestamp,
+            nonce,
+            batch_id,
+            b"",
+            supplied_signature,
+            now,
+        ):
+            return HTTPStatus.UNAUTHORIZED, {"error": "invalid_device_authentication"}
+
+        deadline = threading.Event()
+        for _ in range(50):
+            demand = self.store.live_heart_demand()
+            if int(demand["revision"]) > after_revision:
+                break
+            deadline.wait(0.5)
+        demand = self.store.live_heart_demand()
+        requested_until = _parse_dt(demand["requested_until_utc"])
+        current = utc_now()
+        remaining = max(0, int((requested_until - current).total_seconds())) if requested_until else 0
+        return HTTPStatus.OK, {
+            "revision": int(demand["revision"]),
+            "live_requested": remaining > 0,
+            "lease_seconds": remaining,
+            "requested_until": demand["requested_until_utc"],
+        }
+
     def dashboard(self, range_key: str) -> dict[str, Any]:
         if range_key not in RANGES:
             range_key = "24h"
@@ -1007,6 +1051,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not self._local_host() and self.server.app.ingest_host_allowed(host):
             if parsed.path == "/api/watch/health":
                 self._send_json(HTTPStatus.OK, {"ok": True})
+            elif parsed.path == "/api/watch/live-demand":
+                query = parse_qs(parsed.query)
+                try:
+                    after_revision = max(0, int(query.get("after", ["0"])[0]))
+                except ValueError:
+                    after_revision = 0
+                headers = {key.lower(): value for key, value in self.headers.items()}
+                status, payload = self.server.app.poll_live_heart_demand(headers, after_revision)
+                self._send_json(status, payload)
             else:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "not_found"})
             return
@@ -1038,12 +1091,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 payload = self.server.app.companion_apk.read_bytes()
                 self.send_response(HTTPStatus.OK)
                 self._security_headers("application/vnd.android.package-archive", len(payload))
-                self.send_header("Content-Disposition", 'attachment; filename="personal-state-companion-0.4.0.apk"')
+                self.send_header("Content-Disposition", 'attachment; filename="personal-state-companion-0.4.2.apk"')
                 self.end_headers()
                 self.wfile.write(payload)
             elif parsed.path == "/api/dashboard":
+                self.server.app.request_live_heart()
                 self._send_json(HTTPStatus.OK, self.server.app.dashboard(self._range_key(query)))
             elif parsed.path == "/api/live":
+                self.server.app.request_live_heart()
                 self._send_json(HTTPStatus.OK, self.server.app.live_state())
             elif parsed.path == "/api/watch/history":
                 metric = query.get("metric", [""])[0]

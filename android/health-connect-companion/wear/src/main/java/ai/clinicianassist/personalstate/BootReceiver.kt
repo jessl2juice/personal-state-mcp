@@ -7,10 +7,9 @@ import android.content.Intent
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action !in SUPPORTED_ACTIONS) return
-        if (!LiveHeartService.shouldResume(context)) return
         if (!LiveHeartService.hasLivePermission(context)) return
         if (!LiveHeartService.hasBackgroundPermission(context)) return
-        LiveHeartService.start(context)
+        PassiveHeartMonitor.register(context)
     }
 
     companion object {

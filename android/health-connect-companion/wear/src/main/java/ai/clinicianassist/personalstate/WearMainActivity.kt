@@ -23,7 +23,7 @@ class WearMainActivity : Activity() {
                 System.currentTimeMillis() - snapshot.lastSampleEpochMs <= CURRENT_SAMPLE_MS
             heartValue.text = if (sampleIsCurrent && snapshot.lastBpm != null) snapshot.lastBpm.toString() else "--"
             streamStatus.text = snapshot.status
-            streamButton.text = if (snapshot.monitoringRequested) "Stop monitoring" else "Start monitoring"
+            streamButton.text = if (snapshot.serviceActive) "Stop live session" else "Start 5 min live"
             uiHandler.postDelayed(this, UI_REFRESH_MS)
         }
     }
@@ -35,13 +35,13 @@ class WearMainActivity : Activity() {
         streamStatus = findViewById(R.id.streamStatus)
         streamButton = findViewById(R.id.streamButton)
         streamButton.setOnClickListener {
-            if (LiveHeartService.snapshot(this).monitoringRequested) {
+            if (LiveHeartService.snapshot(this).serviceActive) {
                 LiveHeartService.stop(this)
             } else {
-                requestAndStart()
+                requestAndStartLiveSession()
             }
         }
-        requestAndStart()
+        requestPassiveAccess()
     }
 
     override fun onStart() {
@@ -57,8 +57,10 @@ class WearMainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (LiveHeartService.hasLivePermission(this)) {
-            LiveHeartService.start(this)
             requestBackgroundPermissionOnce()
+            if (LiveHeartService.hasBackgroundPermission(this)) {
+                PassiveHeartMonitor.register(this)
+            }
         }
     }
 
@@ -71,21 +73,22 @@ class WearMainActivity : Activity() {
         when (requestCode) {
             LIVE_PERMISSION_REQUEST -> {
                 if (LiveHeartService.hasLivePermission(this)) {
-                    LiveHeartService.start(this)
                     requestBackgroundPermissionOnce()
+                    if (LiveHeartService.hasBackgroundPermission(this)) {
+                        PassiveHeartMonitor.register(this)
+                    }
                 } else {
                     streamStatus.text = "Heart-rate permission is required"
                 }
             }
             BACKGROUND_PERMISSION_REQUEST -> {
-                if (!LiveHeartService.hasBackgroundPermission(this)) {
-                    streamStatus.text = "Live now; allow all-time health access for restart recovery"
-                }
+                if (LiveHeartService.hasBackgroundPermission(this)) PassiveHeartMonitor.register(this)
+                else streamStatus.text = "Allow all-time health access for battery-safe monitoring"
             }
         }
     }
 
-    private fun requestAndStart() {
+    private fun requestPassiveAccess() {
         val missing = buildList {
             if (!LiveHeartService.hasLivePermission(this@WearMainActivity)) {
                 add(LiveHeartService.livePermission())
@@ -97,11 +100,20 @@ class WearMainActivity : Activity() {
             }
         }
         if (missing.isEmpty()) {
-            LiveHeartService.start(this)
             requestBackgroundPermissionOnce()
+            if (LiveHeartService.hasBackgroundPermission(this)) PassiveHeartMonitor.register(this)
         } else {
             requestPermissions(missing.toTypedArray(), LIVE_PERMISSION_REQUEST)
         }
+    }
+
+    private fun requestAndStartLiveSession() {
+        if (!LiveHeartService.hasLivePermission(this)) {
+            requestPassiveAccess()
+            streamStatus.text = "Allow heart-rate access, then start the live session"
+            return
+        }
+        LiveHeartService.start(this, MANUAL_LIVE_SESSION_MS)
     }
 
     private fun requestBackgroundPermissionOnce() {
@@ -117,6 +129,7 @@ class WearMainActivity : Activity() {
         private const val BACKGROUND_PERMISSION_REQUEST = 42
         private const val UI_REFRESH_MS = 1_000L
         private const val CURRENT_SAMPLE_MS = 60_000L
+        private const val MANUAL_LIVE_SESSION_MS = 5 * 60_000L
         private const val PERMISSION_PREFS = "personal_state_permissions"
         private const val BACKGROUND_PERMISSION_REQUESTED = "background_permission_requested"
     }

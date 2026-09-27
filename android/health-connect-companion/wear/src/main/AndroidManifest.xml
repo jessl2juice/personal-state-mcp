@@ -32,13 +32,17 @@
             android:foregroundServiceType="health"
             android:stopWithTask="false" />
         <service
+            android:name=".PassiveHeartService"
+            android:exported="true"
+            android:permission="com.google.android.wearable.healthservices.permission.PASSIVE_DATA_BINDING" />
+        <service
             android:name=".WatchRecoveryService"
             android:exported="true">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
                 <data
                     android:host="*"
-                    android:pathPrefix="/personal-state/control/resume-heart/v1"
+                    android:pathPrefix="/personal-state/control/"
                     android:scheme="wear" />
             </intent-filter>
         </service>
