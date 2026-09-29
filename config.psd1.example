@@ -14,6 +14,10 @@
     WatchIngestHosts = @()
     WatchDeviceId = ""
 
+    GoogleHealthEnabled = $false
+    GoogleHealthSyncSeconds = 300
+    GoogleHealthRecentHours = 36
+
     CloudflareTunnelEnabled = $false
     DashboardHealthHost = "localhost"
 }

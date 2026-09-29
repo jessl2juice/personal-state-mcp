@@ -1,8 +1,12 @@
 # Distribution and Installer
 
+Document version: 1.0
+Last verified: 2026-09-29
+Intended readers: release engineers, installers, and operators
+
 ## Release model
 
-Personal State 0.4.0 ships as a versioned Windows ZIP. It contains an offline Python wheelhouse, signed Android APKs, Google Play app bundles, checksums, user-facing setup launchers, and the runtime scripts used by the scheduled tasks.
+Personal State 0.4.2 ships as a versioned Windows ZIP. It contains an offline Python wheelhouse, signed Android APKs, Google Play app bundles, checksums, user-facing setup launchers, and the runtime scripts used by the scheduled tasks.
 
 The release package must never contain a health database, history export, pairing file, credential, tunnel token, signing key, device screenshot, or machine-specific settings file.
 
@@ -19,6 +23,8 @@ The installer is current-user only and does not require administrator privileges
 7. creates a local dashboard shortcut;
 8. preserves data and credentials on upgrade;
 9. offers the combined phone-and-watch installation immediately, unless explicitly skipped with `-SkipAndroidCompanions`.
+
+The installer derives the Python package version from the bundled Personal State wheel, so the package installed from a correctly assembled release cannot silently drift from the ZIP version.
 
 Uninstall preserves data by default. Destructive removal requires the explicit `-DeleteData` switch and deletes configured credentials before removing the application environment.
 
@@ -49,7 +55,7 @@ Run:
 .\scripts\build_release.ps1
 ```
 
-The release build runs Python tests, builds all dependency wheels, runs Android unit tests and release lint, creates signed APK and AAB artifacts, computes SHA-256 checksums, and creates `release\Personal-State-0.4.0-Windows.zip`.
+The release build runs Python tests, builds all dependency wheels, runs Android unit tests and release lint, creates signed APK and AAB artifacts, computes SHA-256 checksums, and creates `release\Personal-State-0.4.2-Windows.zip`.
 
 Before publication:
 

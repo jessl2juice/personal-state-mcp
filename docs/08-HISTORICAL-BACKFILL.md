@@ -1,5 +1,9 @@
 # Historical Backfill
 
+Document version: 1.0
+Last verified: 2026-09-29
+Intended readers: data owners, trusted operators, and import developers
+
 Personal State's live connectors preserve data from the moment they are installed. They do not guarantee access to every record a vendor has retained. A complete historical backfill uses each vendor's official account export and then resumes incremental collection.
 
 ## Safety and Integrity Rules
@@ -57,6 +61,18 @@ The importer reads raw heart rate, oxygen saturation, sleep stages, blood pressu
 Google's location traces and opaque device sensor-event logs are intentionally excluded because they are not physiological dashboard measurements. They remain unchanged in the original Takeout archive. Imported records use the `google_fit_takeout` adapter and are always presented as historical or latest-recorded data, never as live device data.
 
 After import, use the dashboard's **All** range to view coverage older than one year. Re-importing the same or an overlapping Takeout archive is supported; exact records are skipped.
+
+## Google Health ongoing synchronization
+
+Google Fit Takeout and Google Health are different paths. Takeout is a user-owned historical archive. Google Health is an optional read-only ongoing adapter for Fitbit and Google wearable records.
+
+```powershell
+personal-state google-health-status
+personal-state google-health-sync --hours 36
+personal-state google-health-backfill --days 365
+```
+
+The backfill command queries in bounded windows and deduplicates overlap. Provider synchronization still controls what Google Health can return. These records retain measurement and receipt timing and are never labeled as direct-watch live data.
 
 ## Search The Rest Of Google Takeout
 

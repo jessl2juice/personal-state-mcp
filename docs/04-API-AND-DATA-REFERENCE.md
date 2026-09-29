@@ -1,7 +1,7 @@
 # Personal State API and Data Reference
 
 Document version: 1.0  
-Last verified: 2026-09-26  
+Last verified: 2026-09-29
 Intended readers: integration developers, agent developers, data reviewers, and operators
 
 ## General response principles
@@ -55,7 +55,7 @@ Returns a compact conversational summary. It includes current glucose context an
 
 ### `health.watch()`
 
-Returns an agent-authorized Samsung Health and watch summary with:
+Returns an agent-authorized Galaxy, Samsung Health, Fitbit, and Google Health wearable summary with:
 
 - latest observations by authorized category.
 - observation recency.
@@ -82,6 +82,12 @@ Invalid or unauthorized requests fail closed with structured errors.
 - `vitals.heart_rate`
 - `vitals.oxygen_saturation`
 - `sleep.session`
+- `vitals.resting_heart_rate`
+- `vitals.heart_rate_variability`
+- `vitals.respiratory_rate`
+- `vitals.skin_temperature`
+- `activity.active_zone_minutes`
+- `activity.total_calories`
 
 Collected categories outside the exposure allowlist remain unavailable to agents until the user explicitly changes policy outside the agent interface.
 
@@ -99,7 +105,7 @@ Collected categories outside the exposure allowlist remain unavailable to agents
 | GET | `/api/health` | Local dashboard health check |
 | GET | `/api/watch/health` | Ingest-host health check only |
 
-Supported dashboard range keys correspond to Day, Week, Month, and Year. Invalid values fall back to Day.
+Supported dashboard range keys correspond to Day, Week, Month, Year, and All history. Invalid values fall back to Day.
 
 ### Local command route
 
@@ -256,6 +262,12 @@ Default service policy:
 ### Other watch observations
 
 Recency is metric-specific. Completed events such as sleep and exercise use neutral states such as recent or latest recorded rather than pretending to be a current vital.
+
+### Fitbit and Google Health observations
+
+- They retain provider measurement time, Personal State receipt time, age, source device evidence, and synchronization limitations.
+- They are classified as recent or latest recorded, never as the direct-watch live stream.
+- Exact Fitbit Air attribution requires both Fitbit platform evidence and a matching Air device name; otherwise attribution remains external or unknown.
 
 ## Threshold rules
 

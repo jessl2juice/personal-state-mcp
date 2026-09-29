@@ -1,7 +1,7 @@
 # Personal State Troubleshooting Runbook
 
 Document version: 1.0  
-Last verified: 2026-09-26  
+Last verified: 2026-09-29
 Intended readers: user and trusted operators
 
 ## First principle
@@ -24,13 +24,13 @@ This is the intended display when the newest direct heart-rate measurement is mo
 6. Open the Personal State phone app and confirm it is paired.
 7. Keep the phone on a working network and wait up to one minute.
 
-The current watch release automatically restarts its own stalled heart stream after 45 seconds. Version 0.4.1 also retries after boot and user unlock, and accepts an app-private resume request from the paired phone only when monitoring was previously enabled. If another workout application owns Health Services, Personal State waits and resumes afterward.
+The current watch release automatically restarts its own stalled heart stream after 45 seconds. Version 0.4.2 also retries after boot and user unlock, and accepts an app-private resume request from the paired phone only when monitoring was previously enabled. If another workout application owns Health Services, Personal State waits and resumes afterward.
 
 ### Operator checks
 
 1. Compare the latest watch-screen sample time, phone relay time, server ingest time, and dashboard time.
 2. Determine where timestamps stop advancing: watch sensor, watch-to-phone, phone-to-server, or dashboard.
-3. Confirm phone and watch version 0.4.0 or later.
+3. Confirm phone and watch version 0.4.2 or later.
 4. Confirm phone and watch package signatures match.
 5. Confirm the watch foreground service is running and has heart-rate, notification, and background access.
 6. Confirm the phone received either Wear OS message or Data Item events.
@@ -92,6 +92,16 @@ Do not fill longer gaps with invented samples. Display smoothing changes the lin
 7. If authentication or endpoint behavior changed, stop repeated login attempts and inspect the adapter against current upstream behavior.
 
 Personal State must not present a stale stored glucose value as current or interpret it against the 80 mg/dL context threshold.
+
+## Fitbit or Google Health is connected but no data appears
+
+1. Open the Fitbit application on the phone and complete a device synchronization.
+2. Run `personal-state google-health-status` and confirm the expected account grant and paired-device metadata.
+3. Run `personal-state google-health-sync --hours 36`.
+4. Check sanitized adapter errors for an expired grant, denied scope, provider delay, or unsupported data type.
+5. Confirm `GoogleHealthEnabled = $true` for background collection.
+
+Do not label a last synchronized Fitbit value as live. Fitbit and Google Health remain subject to their own mobile-app and cloud synchronization cadence.
 
 ## Dashboard does not open
 

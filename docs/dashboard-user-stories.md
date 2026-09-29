@@ -2,7 +2,7 @@
 
 ## Product boundary
 
-The dashboard presents recorded physiological data, timing, provenance, coverage, and descriptive statistics for personal and clinician review. It is not an alarm, diagnosis, causal inference, or treatment system. Libre and Samsung applications remain authoritative for their device alerts and official notices.
+The dashboard presents recorded physiological data, timing, provenance, coverage, and descriptive statistics for personal and clinician review. It is not an alarm, diagnosis, causal inference, or treatment system. Libre, Samsung, Fitbit, and Google applications remain authoritative for their device alerts and official notices.
 
 ## Primary user
 

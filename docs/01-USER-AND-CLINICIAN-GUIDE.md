@@ -1,14 +1,14 @@
 # Personal State User and Clinician Guide
 
 Document version: 1.0  
-Last verified: 2026-09-26  
+Last verified: 2026-09-29
 Intended readers: user, primary care, endocrinology, cardiology, and other authorized clinicians
 
 ## What Personal State does
 
-Personal State brings glucose and heart-rate observations into one private review surface. The dashboard emphasizes what was measured, when it was measured, when it reached the system, how old it is, where it came from, and where coverage is incomplete.
+Personal State brings Libre glucose, direct Galaxy heart rate, Samsung Health history, Google Fit archive records, and synchronized Fitbit/Google Health observations into one private review surface. The dashboard emphasizes what was measured, when it was measured, when it reached the system, how old it is, where it came from, and where coverage is incomplete.
 
-It supports review and conversation. It does not diagnose a condition, determine causality, predict an emergency, provide treatment instructions, or replace the official Libre or Samsung applications.
+It supports review and conversation. It does not diagnose a condition, determine causality, predict an emergency, provide treatment instructions, or replace the official Libre, Samsung, Fitbit, or Google applications.
 
 ## The main view
 
@@ -49,7 +49,7 @@ The timeline is descriptive. It can answer questions such as:
 - Were glucose and heart-rate measurements recorded during the same period?
 - What range was observed in each stream?
 - Are apparent changes supported by dense measurements or separated by gaps?
-- Did a displayed value come from Libre, the watch, Samsung Health, or another Health Connect origin?
+- Did a displayed value come from Libre, the watch, Samsung Health, Google Fit history, Fitbit, or another Google Health origin?
 
 It cannot answer why a change happened. A visible sequence does not prove one signal caused the other.
 
@@ -80,8 +80,9 @@ Common causes include:
 - Phone process, network, or authenticated upload interruption.
 - Libre follower data delay or upstream service changes.
 - Health Connect permission or source-availability limitations.
+- Fitbit phone-app or Google Health synchronization delay.
 
-The dashboard can know when the companion last read Health Connect and when the server last accepted an upload. It generally cannot prove when the watch last synchronized to Samsung Health.
+The dashboard can know when the companion last read Health Connect, when the server last accepted an upload, and when a Google Health record reached Personal State. It generally cannot prove when the watch last synchronized to Samsung Health or when the Fitbit application will next synchronize. Fitbit/Google Health values are never labeled as direct live measurements.
 
 ## Clinician workflows
 
@@ -147,4 +148,4 @@ Agents cannot change thresholds, permissions, credentials, retention, or safety 
 
 ## Safety statement
 
-Use the Libre application and sensor for glucose alerts. Use Samsung Health, Samsung Health Monitor, and appropriate medical devices for their supported features and notices. Seek professional or emergency care based on symptoms and established care guidance, not on Personal State alone.
+Use the Libre application and sensor for glucose alerts. Use Samsung Health, Samsung Health Monitor, Fitbit, Google Health, and appropriate medical devices for their supported features and notices. Seek professional or emergency care based on symptoms and established care guidance, not on Personal State alone.

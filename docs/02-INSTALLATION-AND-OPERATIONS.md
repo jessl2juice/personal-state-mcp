@@ -1,15 +1,16 @@
 # Personal State Installation and Operations Guide
 
 Document version: 1.0  
-Last verified: 2026-09-26  
+Last verified: 2026-09-29
 Intended readers: trusted installers and operators
 
 ## Supported production-pilot topology
 
 - Windows host running the Python service, SQLite history, dashboard, collector, and Cloudflare Tunnel.
 - FreeStyle Libre 3 Plus shared to a dedicated LibreLinkUp follower account.
-- Android phone companion 0.4.0 or later.
-- Galaxy Watch companion 0.4.0 or later on a supported Wear OS watch.
+- Android phone companion 0.4.2 or later.
+- Galaxy Watch companion 0.4.2 or later on a supported Wear OS watch.
+- Optional Fitbit or Google wearable connected through the read-only Google Health API.
 - Private dashboard protected by Cloudflare Access.
 - Separate authenticated ingest hostname and policy for the phone companion.
 
@@ -17,7 +18,7 @@ The dashboard origin must remain bound to loopback. Do not expose port 8766 dire
 
 ## Prerequisites
 
-- Python 3.11 or later.
+- Git, Python 3.11 or later, and PowerShell 5.1 or later. Python 3.12 is the release and CI baseline.
 - A Windows account with access to its OS credential store.
 - A working Libre follower invitation and dedicated follower account.
 - A supported Android phone with Health Connect.
@@ -30,8 +31,9 @@ The dashboard origin must remain bound to loopback. Do not expose port 8766 dire
 From the project root:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\pip install -e ".[mcp,keychain]"
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -e ".[dev,mcp,keychain]"
 ```
 
 Configure non-secret settings in the service environment. Store the Libre password, watch device secret, watch identifier key, Cloudflare tunnel token, and Access service credentials in their designated OS-protected stores. Do not place them in source control, documentation, task arguments, screenshots, or MCP configuration.
@@ -57,9 +59,14 @@ PERSONAL_STATE_WATCH_ENABLED
 PERSONAL_STATE_WATCH_INGEST_HOSTS
 PERSONAL_STATE_WATCH_RETENTION_DAYS
 PERSONAL_STATE_WATCH_MCP_METRICS
+PERSONAL_STATE_GOOGLE_HEALTH_ENABLED
+PERSONAL_STATE_GOOGLE_HEALTH_SYNC_SECONDS
+PERSONAL_STATE_GOOGLE_HEALTH_RECENT_HOURS
 ```
 
 Keep the default glucose threshold at 80 mg/dL unless the user explicitly changes it outside agent control.
+
+The complete source-development sequence, repository map, Android prerequisites, and smoke tests are maintained in the root [README](../README.md). Direct CLI commands read environment variables. The supplied `scripts\start_*.ps1` launchers load `%LOCALAPPDATA%\PersonalStateMCP\settings.psd1` first.
 
 ## Libre activation
 
@@ -71,6 +78,18 @@ Keep the default glucose threshold at 80 mg/dL unless the user explicitly change
 6. Confirm the dashboard shows measurement time, receipt time, source, and age.
 
 The Libre-compatible interface is unofficial and may change. Keep the official Libre app as the alert and source-of-truth layer.
+
+## Google Health and Fitbit activation
+
+1. Enable Google Health API in an isolated Google Cloud project.
+2. Create a read-only OAuth client and download its JSON file outside the repository.
+3. Run `personal-state google-health-connect C:\private\client.json` and open the printed authorization URL.
+4. Run the command again with `--code` and the returned code or complete redirected localhost URL.
+5. Run `personal-state google-health-status` and confirm the expected scopes and paired-device metadata.
+6. Run `personal-state google-health-sync --hours 36`.
+7. Set `GoogleHealthEnabled = $true` in the non-secret settings file for scheduled collection.
+
+OAuth client secret and refresh token material is stored in the OS credential store. Google Health observations are synchronized records and never receive the direct-watch live label. Fitbit data may remain absent until the Fitbit phone application completes its own synchronization.
 
 ## Phone companion activation
 

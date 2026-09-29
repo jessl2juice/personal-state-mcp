@@ -1,7 +1,7 @@
 # Personal State Architecture, Security, and Privacy
 
 Document version: 1.0  
-Last verified: 2026-09-26  
+Last verified: 2026-09-29
 Intended readers: engineering, security, privacy, and technical clinical reviewers
 
 ## System objective
@@ -53,11 +53,23 @@ Galaxy Watch Health Services
 
 The direct path requests heart rate only, disables GPS, uses five-second screen-off batching, relays at most once every second, and automatically recovers its own stalled exercise stream after 45 seconds.
 
+### Fitbit and Google Health
+
+```text
+Fitbit or Google wearable
+  -> Fitbit mobile application and Google Health services
+  -> read-only Personal State Google Health adapter
+  -> normalized SQLite history
+  -> dashboard, export, and allowlisted MCP tools
+```
+
+The adapter uses read-only activity, health-metric, and sleep scopes. Provider synchronization determines availability, so these records are never labeled as direct second-by-second live data. Exact Fitbit Air attribution is asserted only when the API supplies matching platform and device evidence.
+
 ## Major components
 
 ### Adapter boundary
 
-Vendor adapters emit normalized observations rather than exposing vendor response shapes. The current adapters are Libre-compatible glucose and Android Health Connect plus direct watch heart rate. Future Fitbit or Samsung-specific adapters must preserve the same time, provenance, freshness, and safety contracts.
+Vendor adapters emit normalized observations rather than exposing vendor response shapes. Current adapters are Libre-compatible glucose, Android Health Connect, direct watch heart rate, optional Samsung Health Data SDK records, and Google Health wearable records. Every adapter preserves the same time, provenance, freshness, attribution, and safety contracts.
 
 ### Collector
 
@@ -77,7 +89,7 @@ The MCP server uses stdio and exposes read-only tools. A host allowlist, rate li
 
 ## Trust boundaries
 
-1. Vendor boundary: Libre and Samsung services are external sources with independent behavior and availability.
+1. Vendor boundary: Libre, Samsung, Fitbit, and Google services are external sources with independent behavior and availability.
 2. Device boundary: the watch and phone are separate devices connected by Wear OS Data Layer.
 3. Ingest boundary: the phone authenticates to a dedicated ingest hostname that cannot serve the dashboard.
 4. Dashboard boundary: interactive access is protected by a separate Cloudflare Access application.
@@ -87,6 +99,7 @@ The MCP server uses stdio and exposes read-only tools. A host allowlist, rate li
 ## Authentication and authorization
 
 - Libre uses a dedicated follower identity. Its password is held in the OS credential store.
+- Google Health uses a read-only OAuth grant. The client secret and refresh token are held in the OS credential store.
 - Dashboard access uses Cloudflare Access interactive authentication.
 - Phone ingest uses a separate Access service identity plus device-level HMAC authentication.
 - Ingest requests carry device id, timestamp, nonce, batch id, and signature.
@@ -153,6 +166,7 @@ This architecture does not by itself establish HIPAA, GDPR, state-law, medical-d
 - A compromised or unlocked phone can access data and secrets available to the running application despite Keystore protection.
 - A compromised Windows account may access the local database and active service session.
 - The unofficial Libre-compatible interface may break or change without notice.
+- Google Health and Fitbit application synchronization can delay or omit otherwise valid wearable records.
 - Device and cloud timestamps may be delayed or wrong.
 - Samsung Health does not expose every Galaxy Watch metric through Health Connect.
 - Bluetooth, network, operating-system background policies, sensor contact, and battery conditions can create gaps.

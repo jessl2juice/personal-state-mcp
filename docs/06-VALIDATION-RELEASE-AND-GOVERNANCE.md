@@ -1,7 +1,7 @@
 # Personal State Validation, Release, and Governance
 
 Document version: 1.0  
-Last verified: 2026-09-26  
+Last verified: 2026-09-29
 Intended readers: maintainers, reviewers, and release operators
 
 ## Governance principles
@@ -16,7 +16,7 @@ Intended readers: maintainers, reviewers, and release operators
 
 ## Design review record
 
-The initial design and the Galaxy Watch5 Pro addendum received independent rigorous review under the reviewer role name Fable. The reviews identified and resolved issues in:
+The initial design, Galaxy Watch5 Pro addendum, Samsung Health Data expansion, and Google Health/Fitbit Air adapter received independent rigorous review under the reviewer role name Fable. The reviews identified and resolved issues in:
 
 - Agent authorization and rate limiting.
 - Libre redirect and credential-leak risk.
@@ -37,24 +37,27 @@ The detailed findings and resolutions remain in the engineering review documents
 
 ## Current release contents
 
-### Server 0.4.0
+### Server 0.4.2
 
 - Libre-compatible follower collection.
 - SQLite long-term history.
 - Read-only MCP tools.
 - Private dashboard and CSV exports.
 - Signed watch ingest and Health Connect storage.
+- Read-only Google Health OAuth, recent synchronization, and historical backfill.
+- Google Fit and LibreView historical imports with backup and deduplication.
 - Host allowlisting, rate limiting, audit records, and safety envelopes.
 
-### Phone companion 0.4.0
+### Phone companion 0.4.2
 
 - Android Health Connect read-only collection.
 - Encrypted pairing storage.
 - Signed ingest.
 - Wear OS message and Data Item reception.
 - Timestamp deduplication of direct heart-rate transport.
+- Full authorized Health Connect history and optional licensed Samsung Health Data reads.
 
-### Watch companion 0.4.0
+### Watch companion 0.4.2
 
 - Battery-safe passive heart-rate collection plus lease-bounded foreground live collection through Health Services.
 - Five-second screen-off batching, no GPS.
@@ -168,9 +171,9 @@ The following changes require explicit user approval and a focused security/safe
 - Direct live heart monitoring uses additional watch battery only while an MCP or dashboard lease is active, and pauses while another exercise application owns Health Services.
 - The system can report companion read and upload status, but it cannot generally prove Samsung or watch synchronization state.
 
-## Future adapter policy
+## Adapter policy
 
-Fitbit, Samsung Health Data SDK, or other adapters must:
+The current Google Health/Fitbit and optional Samsung Health Data adapters, plus any future adapter, must:
 
 - Be read-only in the initial release.
 - Map into existing normalized observation types.

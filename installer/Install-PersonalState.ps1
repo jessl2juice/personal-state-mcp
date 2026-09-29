@@ -92,6 +92,10 @@ if (-not (Test-Path -LiteralPath $wheelhouse)) {
 }
 $projectWheel = Get-ChildItem -LiteralPath $wheelhouse -Filter "personal_state_mcp-*.whl" | Sort-Object Name -Descending | Select-Object -First 1
 if (-not $projectWheel) { throw "This setup package is incomplete: the Personal State package was not found." }
+if ($projectWheel.Name -notmatch '^personal_state_mcp-(?<Version>[^-]+)-') {
+    throw "This setup package is incomplete: the Personal State package version could not be read."
+}
+$packageVersion = $Matches.Version
 
 Write-Step "Checking this computer"
 try {
@@ -113,7 +117,7 @@ $venvPath = Join-Path $InstallRoot "venv"
 & $python.Exe @($python.Prefix) -m venv $venvPath
 if ($LASTEXITCODE -ne 0) { throw "Python could not create the private Personal State environment." }
 $venvPython = Join-Path $venvPath "Scripts\python.exe"
-& $venvPython -m pip install --disable-pip-version-check --no-index --find-links $wheelhouse "personal-state-mcp[mcp,keychain]==0.4.0"
+& $venvPython -m pip install --disable-pip-version-check --no-index --find-links $wheelhouse "personal-state-mcp[mcp,keychain]==$packageVersion"
 if ($LASTEXITCODE -ne 0) { throw "Personal State packages could not be installed." }
 
 Copy-Item -LiteralPath $scriptsSource -Destination (Join-Path $InstallRoot "scripts") -Recurse -Force
