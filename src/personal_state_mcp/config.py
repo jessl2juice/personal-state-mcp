@@ -70,12 +70,21 @@ class AppConfig:
     watch_device_secret: str | None = None
     watch_identifier_key: str | None = None
     watch_retention_days: int = 3650
+    google_health_enabled: bool = False
+    google_health_sync_interval_seconds: int = 300
+    google_health_recent_hours: int = 36
     watch_mcp_metrics: tuple[str, ...] = (
         "activity.steps",
         "activity.exercise_session",
         "vitals.heart_rate",
         "vitals.oxygen_saturation",
         "sleep.session",
+        "vitals.resting_heart_rate",
+        "vitals.heart_rate_variability",
+        "vitals.respiratory_rate",
+        "vitals.skin_temperature",
+        "activity.active_zone_minutes",
+        "activity.total_calories",
     )
 
     @property
@@ -100,6 +109,13 @@ def load_config() -> AppConfig:
             watch_identifier_key = watch_identifier_key or get_watch_identifier_key()
         except Exception:
             pass
+    google_health_connected = False
+    try:
+        from .secrets import get_google_health_credentials
+
+        google_health_connected = get_google_health_credentials() is not None
+    except Exception:
+        pass
     return AppConfig(
         db_path=db_path,
         host_id=os.environ.get("PERSONAL_STATE_MCP_HOST_ID", "default-local"),
@@ -124,6 +140,9 @@ def load_config() -> AppConfig:
         watch_device_secret=watch_device_secret,
         watch_identifier_key=watch_identifier_key,
         watch_retention_days=_int_env("PERSONAL_STATE_WATCH_RETENTION_DAYS", 3650),
+        google_health_enabled=_bool_env("PERSONAL_STATE_GOOGLE_HEALTH_ENABLED", google_health_connected),
+        google_health_sync_interval_seconds=_int_env("PERSONAL_STATE_GOOGLE_HEALTH_SYNC_SECONDS", 300),
+        google_health_recent_hours=_int_env("PERSONAL_STATE_GOOGLE_HEALTH_RECENT_HOURS", 36),
         watch_mcp_metrics=_csv_env(
             "PERSONAL_STATE_WATCH_MCP_METRICS",
             (
@@ -132,6 +151,12 @@ def load_config() -> AppConfig:
                 "vitals.heart_rate",
                 "vitals.oxygen_saturation",
                 "sleep.session",
+                "vitals.resting_heart_rate",
+                "vitals.heart_rate_variability",
+                "vitals.respiratory_rate",
+                "vitals.skin_temperature",
+                "activity.active_zone_minutes",
+                "activity.total_calories",
             ),
         ),
     )

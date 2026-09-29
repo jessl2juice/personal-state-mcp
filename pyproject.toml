@@ -21,6 +21,7 @@ dev = ["pytest>=8.3"]
 personal-state = "personal_state_mcp.cli:main"
 personal-state-mcp = "personal_state_mcp.mcp_server:main"
 personal-state-dashboard = "personal_state_mcp.dashboard:main"
+personal-state-takeout = "personal_state_mcp.takeout_search:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/personal_state_mcp"]

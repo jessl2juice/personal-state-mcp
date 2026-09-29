@@ -58,6 +58,18 @@ Google's location traces and opaque device sensor-event logs are intentionally e
 
 After import, use the dashboard's **All** range to view coverage older than one year. Re-importing the same or an overlapping Takeout archive is supported; exact records are skipped.
 
+## Search The Rest Of Google Takeout
+
+Keep non-health Google account content out of the Personal State physiological database. Build a separate, local-only SQLite full-text index instead:
+
+```powershell
+personal-state-takeout index C:\Users\you\Downloads
+personal-state-takeout search "words to find"
+personal-state-takeout status
+```
+
+The index reads ZIP members without extracting or modifying the source archives. Google Fit is excluded because its normalized health records belong in Personal State. The index streams other text formats, extracts searchable text from DOCX, PPTX, and XLSX files up to 64 MB, and indexes filenames and paths for other binary files. Re-running the command skips archives already indexed and resumes partial archives. Add later Takeout ZIP parts with the same command. The default database is `%LOCALAPPDATA%\GoogleTakeoutSearch\takeout-search.db`; override it with `GOOGLE_TAKEOUT_SEARCH_DB` or `--db`.
+
 ## Archive Inspection
 
 Before importing a Google or Samsung archive, identify it and record its file inventory:

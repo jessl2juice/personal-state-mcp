@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from personal_state_mcp.config import AppConfig
 from personal_state_mcp.dashboard import DashboardApp
+from personal_state_mcp.models import HealthObservation
 from personal_state_mcp.service import HealthService
 from personal_state_mcp.watch_contract import DIRECT_WEAR_PACKAGE, WatchContractError, parse_json_strict, upload_signature, validate_batch
 
@@ -209,6 +210,48 @@ def test_direct_wear_heart_rate_is_accepted_with_explicit_provenance() -> None:
         latest = app.store.latest_watch_by_metric()["vitals.heart_rate"]
         assert latest.source_package == DIRECT_WEAR_PACKAGE
         assert latest.attribution["state"] == "watch_confirmed"
+
+
+def test_dashboard_keeps_live_galaxy_heart_separate_from_newer_fitbit_heart() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        app = DashboardApp(config(Path(directory) / "state.db"))
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        payload = batch(now, [{"operation": "upsert", "observation": direct_heart_observation(now, bpm=76)}])
+        body, headers = signed_request(payload, now)
+        assert app.ingest_watch(body, headers)[0] == 200
+
+        fitbit_time = now + timedelta(seconds=1)
+        app.store.import_health_observations(
+            [
+                HealthObservation(
+                    id="fitbit-heart-newer",
+                    metric="vitals.heart_rate",
+                    category="vitals",
+                    record_kind="series",
+                    payload={"samples": [{"time": fitbit_time.isoformat().replace("+00:00", "Z"), "value": 68, "unit": "bpm"}]},
+                    observed_by_companion_at=fitbit_time,
+                    ingested_at_server=fitbit_time,
+                    source_package="google.health.fitbit",
+                    recording_method="actively_measured",
+                    attribution={"state": "external_device", "device_name": "Fitbit Air"},
+                    installation_hash="google-health",
+                    source_record_hash="fitbit-heart-newer",
+                    adapter_id="google_health_fitbit",
+                    adapter_version="v1",
+                    identity_namespace_id="google-health-user",
+                    measured_at=fitbit_time,
+                )
+            ]
+        )
+
+        dashboard = app.watch_dashboard(now + timedelta(seconds=2), None)
+
+        assert dashboard["latest"]["vitals.heart_rate"]["provenance"]["adapter"] == "google_health_fitbit"
+        assert dashboard["direct_heart_rate"]["provenance"]["adapter"] == "wear_health_services"
+        assert dashboard["latest_by_source"]["galaxy"]["vitals.heart_rate"]["payload"]["samples"][-1]["value"] == 76
+        assert dashboard["latest_by_source"]["fitbit"]["vitals.heart_rate"]["payload"]["samples"][-1]["value"] == 68
+        assert dashboard["sources"]["galaxy"]["status"] == "live"
+        assert dashboard["sources"]["fitbit"]["status"] == "synced"
 
 
 def test_upstream_delete_removes_observation_and_keeps_tombstone_behavior() -> None:

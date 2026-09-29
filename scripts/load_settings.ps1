@@ -22,6 +22,9 @@ function Import-PersonalStateSettings {
         WatchEnabled = "PERSONAL_STATE_WATCH_ENABLED"
         WatchIngestHosts = "PERSONAL_STATE_WATCH_INGEST_HOSTS"
         WatchDeviceId = "PERSONAL_STATE_WATCH_DEVICE_ID"
+        GoogleHealthEnabled = "PERSONAL_STATE_GOOGLE_HEALTH_ENABLED"
+        GoogleHealthSyncSeconds = "PERSONAL_STATE_GOOGLE_HEALTH_SYNC_SECONDS"
+        GoogleHealthRecentHours = "PERSONAL_STATE_GOOGLE_HEALTH_RECENT_HOURS"
     }
 
     foreach ($entry in $mapping.GetEnumerator()) {

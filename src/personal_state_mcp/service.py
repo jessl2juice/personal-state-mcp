@@ -182,8 +182,13 @@ class HealthService:
             wording = "No glucose context is available."
         else:
             wording = "No below-threshold context is indicated by the latest fresh or recent reading."
+        wearable_summary = self._watch_summary(include_clinical_findings=False) if self._wearables_enabled() else {
+            "enabled": False,
+            "latest": {},
+            "message": "No wearable adapter is enabled.",
+        }
         return ResponseEnvelope(
-            ok=reading is not None,
+            ok=reading is not None or bool(wearable_summary.get("latest")),
             tool=tool,
             generated_at=now,
             data={
@@ -203,11 +208,12 @@ class HealthService:
                     "suggested_wording": wording,
                 },
                 "glucose": reading.public_dict() if reading else None,
+                "physiological_context": wearable_summary,
             },
             freshness=freshness,
             provenance=reading.provenance.public_dict() if reading else EMPTY_PROVENANCE,
             safety=SAFETY_NOTICE,
-            errors=[] if reading else [ErrorInfo("no_glucose_data", "No glucose reading is stored.", retryable=True)],
+            errors=[] if reading or wearable_summary.get("latest") else [ErrorInfo("no_physiological_data", "No physiological context is stored.", retryable=True)],
         ).public_dict()
 
     def current_state(self) -> dict[str, Any]:
@@ -225,13 +231,13 @@ class HealthService:
             self.config.near_threshold_margin_mg_dl,
         )
         recent = self.store.recent_glucose(hours=3, limit=96)
-        watch_summary = self._watch_summary(include_clinical_findings=False) if self.config.watch_enabled else {
+        watch_summary = self._watch_summary(include_clinical_findings=False) if self._wearables_enabled() else {
             "enabled": False,
             "latest": {},
             "message": "Watch collection is not enabled.",
         }
         return ResponseEnvelope(
-            ok=reading is not None,
+            ok=reading is not None or bool(watch_summary.get("latest")),
             tool=tool,
             generated_at=now,
             data={
@@ -253,13 +259,16 @@ class HealthService:
             freshness=freshness,
             provenance=reading.provenance.public_dict() if reading else EMPTY_PROVENANCE,
             safety=SAFETY_NOTICE,
-            errors=[] if reading else [ErrorInfo("no_glucose_data", "No glucose reading is stored.", retryable=True)],
+            errors=[] if reading or watch_summary.get("latest") else [ErrorInfo("no_physiological_data", "No physiological state is stored.", retryable=True)],
         ).public_dict()
 
     def _observation_dict(self, observation: HealthObservation, now: datetime) -> dict[str, Any]:
         payload = observation.public_dict()
         payload["observation_recency"] = observation_recency(observation, now)
         return payload
+
+    def _wearables_enabled(self) -> bool:
+        return self.config.watch_enabled or self.config.google_health_enabled
 
     def _watch_summary(self, *, include_clinical_findings: bool = True) -> dict[str, Any]:
         now = self.clock()
@@ -273,8 +282,9 @@ class HealthService:
             "last_companion_upload": self.store.latest_watch_sync(),
             "exposure_policy": {"allowed_metrics": sorted(allowed), "stress_enabled": "wellness.stress" in allowed},
             "limitations": [
-                "Samsung Health origin does not by itself prove a record came from the watch.",
-                "Samsung/watch synchronization timing is unknown.",
+                "Source attribution is evidence-based and does not infer a specific device when Google or Samsung omits it.",
+                "Fitbit observations are available only after the device synchronizes through the Fitbit app.",
+                "Only direct Wear Health Services heart rate may be labeled live.",
                 "Missing data is not a normal reading or proof of a synchronization failure.",
             ],
         }
@@ -285,7 +295,7 @@ class HealthService:
         if access_error:
             return self._deny_envelope(tool, access_error)
         now = self.clock()
-        if not self.config.watch_enabled:
+        if not self._wearables_enabled():
             return ResponseEnvelope(
                 ok=False,
                 tool=tool,
@@ -294,7 +304,7 @@ class HealthService:
                 freshness={"status": "unavailable", "reason": "Watch collection is disabled."},
                 provenance=EMPTY_PROVENANCE,
                 safety=WATCH_SAFETY_NOTICE,
-                errors=[ErrorInfo("watch_disabled", "Watch collection is not enabled.", retryable=False)],
+                errors=[ErrorInfo("wearables_disabled", "Wearable collection is not enabled.", retryable=False)],
             ).public_dict()
         summary = self._watch_summary()
         latest = summary["latest"]
@@ -312,8 +322,8 @@ class HealthService:
             provenance={
                 "adapter": adapter_ids[0] if len(adapter_ids) == 1 else ("mixed" if adapter_ids else None),
                 "adapters": adapter_ids,
-                "vendor": "Samsung",
-                "source": "Persisted source provenance is included on every observation.",
+                "vendor": "mixed" if len(adapter_ids) > 1 else ("Google Fitbit" if adapter_ids == ["google_health_fitbit"] else "Samsung"),
+                "source": "Persisted source provenance and per-metric recency are included on every observation.",
             },
             safety=WATCH_SAFETY_NOTICE,
             errors=[] if latest else [ErrorInfo("no_watch_data", "No agent-authorized watch observations are stored.", retryable=True)],
@@ -331,7 +341,7 @@ class HealthService:
         if access_error:
             return self._deny_envelope(tool, access_error)
         now = self.clock()
-        if not self.config.watch_enabled:
+        if not self._wearables_enabled():
             return ResponseEnvelope(
                 ok=False,
                 tool=tool,

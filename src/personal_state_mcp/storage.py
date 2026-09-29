@@ -932,11 +932,23 @@ class StateStore:
             ).fetchall()
         return [self._row_to_observation(row) for row in rows]
 
-    def latest_watch_by_metric(self, metrics: Iterable[str] | None = None) -> dict[str, HealthObservation]:
+    def latest_watch_by_metric(
+        self,
+        metrics: Iterable[str] | None = None,
+        *,
+        adapter_ids: Iterable[str] | None = None,
+    ) -> dict[str, HealthObservation]:
         allowed = set(metrics) if metrics is not None else None
+        adapters = tuple(dict.fromkeys(adapter_ids or ()))
+        where = ""
+        params: list[Any] = []
+        if adapters:
+            placeholders = ", ".join("?" for _ in adapters)
+            where = f"WHERE adapter_id IN ({placeholders})"
+            params.extend(adapters)
         with self.connect() as conn:
             rows = conn.execute(
-                """
+                f"""
                 WITH ranked AS (
                     SELECT health_observations.*,
                            ROW_NUMBER() OVER (
@@ -944,10 +956,12 @@ class StateStore:
                                ORDER BY COALESCE(measured_at_utc, end_at_utc, start_at_utc) DESC, id DESC
                            ) AS metric_rank
                     FROM health_observations
+                    {where}
                 )
                 SELECT * FROM ranked WHERE metric_rank = 1
                 ORDER BY COALESCE(measured_at_utc, end_at_utc, start_at_utc) DESC, id DESC
-                """
+                """,
+                params,
             ).fetchall()
         result: dict[str, HealthObservation] = {}
         for observation in rows:

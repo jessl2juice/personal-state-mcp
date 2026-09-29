@@ -131,3 +131,54 @@ def delete_watch_access_credentials(device_id: str, *, missing_ok: bool = False)
         raise SecretError("The optional keyring package is required to delete Access credentials.") from exc
     _delete_password(keyring, f"watch-access-client-id:{device_id}", missing_ok=missing_ok)
     _delete_password(keyring, f"watch-access-client-secret:{device_id}", missing_ok=missing_ok)
+
+
+def get_google_health_credentials() -> dict[str, str] | None:
+    try:
+        import keyring  # type: ignore
+    except Exception:
+        return None
+    names = ("client-id", "client-secret", "refresh-token", "redirect-uri")
+    values = {name: keyring.get_password(SERVICE_NAME, f"google-health:{name}") for name in names}
+    if not all(values.values()):
+        return None
+    scopes = keyring.get_password(SERVICE_NAME, "google-health:scopes") or ""
+    return {
+        "client_id": values["client-id"] or "",
+        "client_secret": values["client-secret"] or "",
+        "refresh_token": values["refresh-token"] or "",
+        "redirect_uri": values["redirect-uri"] or "",
+        "scopes": scopes,
+    }
+
+
+def set_google_health_credentials(
+    *,
+    client_id: str,
+    client_secret: str,
+    refresh_token: str,
+    redirect_uri: str,
+    scopes: str,
+) -> None:
+    try:
+        import keyring  # type: ignore
+    except Exception as exc:
+        raise SecretError("The optional keyring package is required to store Google Health credentials.") from exc
+    values = {
+        "client-id": client_id,
+        "client-secret": client_secret,
+        "refresh-token": refresh_token,
+        "redirect-uri": redirect_uri,
+        "scopes": scopes,
+    }
+    for name, value in values.items():
+        keyring.set_password(SERVICE_NAME, f"google-health:{name}", value)
+
+
+def delete_google_health_credentials(*, missing_ok: bool = False) -> None:
+    try:
+        import keyring  # type: ignore
+    except Exception as exc:
+        raise SecretError("The optional keyring package is required to delete Google Health credentials.") from exc
+    for name in ("client-id", "client-secret", "refresh-token", "redirect-uri", "scopes"):
+        _delete_password(keyring, f"google-health:{name}", missing_ok=missing_ok)

@@ -182,6 +182,9 @@ class HealthObservation:
         if self.adapter_id == "google_fit_takeout":
             vendor = "Google Fit"
             source = "Google Fit Takeout historical export"
+        elif self.adapter_id == "google_health_fitbit":
+            vendor = "Google Fitbit"
+            source = "Google Health API wearable stream"
         elif self.adapter_id == "android_samsung_health_data":
             vendor = "Samsung"
             source = "Samsung Health Data SDK"

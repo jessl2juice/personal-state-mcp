@@ -245,6 +245,10 @@ def test_dashboard_places_all_current_signals_before_history_charts() -> None:
     assert 'id="timeline-panel"' in html
     assert 'id="glucose-stream-alert"' in html
     assert 'id="current-glucose-unit"' in html
+    assert 'class="source-strip"' in html
+    assert 'id="source-libre-status"' in html
+    assert 'id="source-galaxy-status"' in html
+    assert 'id="source-fitbit-status"' in html
 
     javascript = (static_dir / "app.js").read_text(encoding="utf-8")
     assert 'streamStatus === "stopped"' in javascript
@@ -254,3 +258,6 @@ def test_dashboard_places_all_current_signals_before_history_charts() -> None:
     assert "collapseSegmentForDisplay" in javascript
     assert "medianSmoothSegment" in javascript
     assert '"Heart rate · trend"' in javascript
+    assert 'payload.watch?.direct_heart_rate' in javascript
+    assert 'google_health_fitbit: "Fitbit Air · Google Health"' in javascript
+    assert 'Treat Fitbit/Google Health values as synchronized records, never live.' in javascript

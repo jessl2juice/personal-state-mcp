@@ -80,6 +80,23 @@
             <span>Every value is labeled with its age and source</span>
           </div>
         </div>
+        <div class="source-strip" aria-label="Connected physiological data sources">
+          <div class="source-item source-libre">
+            <span class="source-mark"><svg><use href="#icon-droplet"/></svg></span>
+            <div><strong>Libre 3 Plus</strong><span>Glucose · near real time</span></div>
+            <div class="source-state"><b id="source-libre-status">Connecting</b><small id="source-libre-detail">Waiting for glucose</small></div>
+          </div>
+          <div class="source-item source-galaxy">
+            <span class="source-mark"><svg><use href="#icon-watch"/></svg></span>
+            <div><strong>Galaxy Watch</strong><span>Direct + Samsung Health</span></div>
+            <div class="source-state"><b id="source-galaxy-status">Connecting</b><small id="source-galaxy-detail">Waiting for watch</small></div>
+          </div>
+          <div class="source-item source-fitbit">
+            <span class="source-mark"><svg><use href="#icon-activity"/></svg></span>
+            <div><strong>Fitbit Air</strong><span>Google Health · synchronized</span></div>
+            <div class="source-state"><b id="source-fitbit-status">Not connected</b><small id="source-fitbit-detail">OAuth setup pending</small></div>
+          </div>
+        </div>
         <div id="glucose-stream-alert" class="sensor-alert" role="alert" hidden>
           <div class="sensor-alert-icon"><svg><use href="#icon-alert"/></svg></div>
           <div class="sensor-alert-copy">
@@ -113,7 +130,7 @@
             <div><p class="section-kicker">Latest available records</p><h2 id="signal-board-title">Connected health signals</h2></div>
             <span id="signal-count" class="signal-count">Waiting for data</span>
           </div>
-          <div id="watch-latest-grid" class="health-metric-grid" aria-label="Latest recorded watch and Samsung Health measurements"></div>
+          <div id="watch-latest-grid" class="health-metric-grid" aria-label="Latest recorded Galaxy Watch, Samsung Health, and Fitbit measurements"></div>
           <div class="watch-sync-band" aria-label="Data connection status">
             <div><span>Companion read</span><strong id="watch-read-time">No read recorded</strong></div>
             <div><span>Server upload</span><strong id="watch-upload-time">No upload recorded</strong></div>
@@ -243,7 +260,7 @@
         <div class="evidence-body">
       <section id="watch" class="view-section is-active consolidated-section" aria-labelledby="watch-title">
         <div class="section-heading watch-heading">
-          <div><p class="section-kicker">Galaxy Watch5 Pro · Samsung Health · Health Connect</p><h2 id="watch-title">Records and connections</h2></div>
+          <div><p class="section-kicker">Libre · Galaxy Watch · Samsung Health · Fitbit Air</p><h2 id="watch-title">Records and connections</h2></div>
           <div class="watch-heading-actions">
             <a class="secondary-button" href="/downloads/personal-state-companion.apk" download><svg><use href="#icon-download"/></svg>Update phone companion</a>
           </div>
@@ -271,7 +288,7 @@
         </div>
         <div class="safety-band watch-authority-band">
           <svg><use href="#icon-shield"/></svg>
-          <div><strong>Samsung remains authoritative</strong><p id="watch-authority">Samsung Health and Samsung Health Monitor remain authoritative for device features and official notices.</p></div>
+          <div><strong>Source apps remain authoritative</strong><p id="watch-authority">Libre, Samsung Health, Samsung Health Monitor, Fitbit, and Google Health remain authoritative for device features and official notices.</p></div>
         </div>
       </section>
 

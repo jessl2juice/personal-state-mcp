@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .adapters.libre_linkup import LibreLinkUpAdapter
+from .adapters.google_health import GoogleHealthAdapter
 from .collector import Collector
 from .config import load_config
 from .service import HealthService
@@ -10,9 +11,12 @@ from .storage import StateStore
 def build_service() -> HealthService:
     config = load_config()
     store = StateStore(config.db_path)
+    adapters = [LibreLinkUpAdapter(config)]
+    if config.google_health_enabled:
+        adapters.append(GoogleHealthAdapter(config))
     collector = Collector(
         store=store,
-        adapters=[LibreLinkUpAdapter(config)],
+        adapters=adapters,
         min_poll_interval_seconds=config.min_poll_interval_seconds,
     )
     return HealthService(config=config, store=store, collector=collector)
@@ -62,7 +66,7 @@ if MCPServer is not None:
 
     @mcp.tool(name="health.watch", annotations=read_only)
     def health_watch() -> dict:
-        """Return the agent-authorized Samsung Health summary with recency, attribution, and sync limits."""
+        """Return agent-authorized wearable context with recency, attribution, and sync limits."""
         return _service().watch()
 
     @mcp.tool(name="health.watch_recent", annotations=read_only)

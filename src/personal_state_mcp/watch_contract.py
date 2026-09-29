@@ -537,6 +537,8 @@ def observation_recency(observation: HealthObservation, now: datetime) -> dict[s
             status, reason = "last_recorded", "This is the last recorded heart-rate value."
     elif observation.metric in {"vitals.oxygen_saturation", "vitals.oxygen_saturation_series"}:
         status, reason = ("recent", "Oxygen sample is within 2 hours.") if age <= 7200 else ("latest_recorded", "This is the latest recorded oxygen sample.")
+    elif observation.metric in {"vitals.resting_heart_rate", "vitals.heart_rate_variability", "vitals.respiratory_rate"}:
+        status, reason = ("recent", "This Fitbit-derived vital is within 24 hours.") if age <= 86400 else ("latest_recorded", "This is the latest recorded value; it is not live.")
     elif observation.metric.startswith("activity.") and observation.metric != "activity.exercise_session":
         status, reason = ("recent", "Activity record is within 12 hours.") if age <= 43200 else ("latest_recorded", "This is the latest recorded activity value.")
     elif observation.metric == "activity.exercise_session":

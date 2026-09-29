@@ -17,14 +17,16 @@ class Collector:
         summaries: list[dict[str, object]] = []
         for adapter in self.adapters:
             result = adapter.collect()
-            inserted = self.store.upsert_glucose_readings(result.readings)
+            glucose_inserted = self.store.upsert_glucose_readings(result.readings)
+            health_result = self.store.import_health_observations(result.observations)
+            inserted = glucose_inserted + health_result["inserted"]
             first_error = result.errors[0] if result.errors else None
             self.store.record_collector_run(
                 adapter=result.adapter,
                 started_at=result.started_at,
                 finished_at=result.finished_at,
                 status=result.status,
-                readings_seen=len(result.readings),
+                readings_seen=len(result.readings) + len(result.observations),
                 readings_inserted=inserted,
                 error_code=first_error.code if first_error else None,
                 error_message=first_error.message if first_error else None,
@@ -35,7 +37,10 @@ class Collector:
                     "adapter": result.adapter,
                     "status": result.status,
                     "readings_seen": len(result.readings),
-                    "readings_inserted": inserted,
+                    "readings_inserted": glucose_inserted,
+                    "observations_seen": len(result.observations),
+                    "observations_inserted": health_result["inserted"],
+                    "observations_duplicates": health_result["duplicates"],
                     "errors": [error.public_dict() for error in result.errors],
                     "metadata": result.metadata,
                 }

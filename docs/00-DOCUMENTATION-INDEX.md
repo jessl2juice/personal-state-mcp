@@ -34,6 +34,10 @@ The system is designed to help the user and the user's clinicians review recorde
 
 The original detailed design, independent Fable review, resolution logs, and normative watch-ingest schema remain part of the engineering record:
 
+- [Google Health / Fitbit Air adapter design](google-health-fitbit-air-design.md)
+- [Fable Google Health / Fitbit Air review](review/fable-google-health-fitbit-air-review.md)
+- [Google Health / Fitbit Air resolution log](review/google-health-fitbit-air-resolution-log.md)
+
 - [Detailed design](design.md)
 - [Galaxy Watch5 Pro design addendum](watch5-pro-design-addendum.md)
 - [Fable review](review/fable-review.md)

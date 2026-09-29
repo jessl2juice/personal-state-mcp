@@ -62,6 +62,9 @@
     "body.basal_metabolic_rate": "Basal metabolic rate",
     "body.height": "Height",
     "vitals.resting_heart_rate": "Resting heart rate",
+    "vitals.heart_rate_variability": "Heart rate variability",
+    "vitals.respiratory_rate": "Respiratory rate",
+    "activity.active_zone_minutes": "Active Zone Minutes",
     "nutrition.intake": "Nutrition",
   };
   const watchMetricOrder = [
@@ -90,6 +93,9 @@
     "vitals.blood_pressure",
     "vitals.blood_glucose",
     "vitals.resting_heart_rate",
+    "vitals.heart_rate_variability",
+    "vitals.respiratory_rate",
+    "activity.active_zone_minutes",
     "activity.vo2_max",
     "activity.exercise_power",
     "body.weight",
@@ -234,7 +240,7 @@
     setText("#context-title", titles[threshold.state] || "Current context unavailable");
     setText("#context-copy", threshold.message || "The official Libre app and sensor remain the safety alert layer.");
 
-    const heart = payload.watch?.latest?.["vitals.heart_rate"];
+    const heart = payload.watch?.direct_heart_rate || payload.watch?.latest?.["vitals.heart_rate"];
     const heartRecency = heart?.observation_recency || {};
     const heartSync = payload.watch?.heart_rate_sync || {};
     const heartStatus = heartRecency.status === "old" ? "stale" : heartRecency.status;
@@ -290,6 +296,51 @@
         loadLive({ quiet: true });
       }, cutoffDelay);
     }
+    renderSources(payload);
+  }
+
+  function renderSources(payload) {
+    const current = payload.current || {};
+    const watch = payload.watch?.sources ? payload.watch : (state.payload?.watch || payload.watch || {});
+    const setSource = (key, status, detail, tone) => {
+      setText(`#source-${key}-status`, status);
+      setText(`#source-${key}-detail`, detail);
+      const item = $(`.source-${key}`);
+      if (item) item.dataset.state = tone;
+    };
+
+    const glucoseCurrent = current.stream?.current ?? current.freshness?.status === "fresh";
+    const glucoseReading = current.reading;
+    const glucoseAge = formatAge(current.freshness?.measurement_age_seconds);
+    setSource(
+      "libre",
+      glucoseCurrent ? "Near real time" : glucoseReading ? "Not current" : "No data",
+      glucoseReading ? `${glucoseReading.value_mg_dl} mg/dL · ${glucoseAge}` : "Waiting for glucose",
+      glucoseCurrent ? "current" : "error",
+    );
+
+    const galaxy = watch.sources?.galaxy || {};
+    const directHeart = payload.watch?.direct_heart_rate || watch.direct_heart_rate;
+    const galaxyMetrics = Number(galaxy.metric_count || 0);
+    const galaxyAge = galaxy.age_seconds === null || galaxy.age_seconds === undefined ? "No measurements" : formatAge(galaxy.age_seconds);
+    setSource(
+      "galaxy",
+      galaxy.status === "live" || payload.watch?.heart_rate_sync?.status === "current" ? "Live" : galaxy.status === "synced" ? "Recorded" : galaxy.status === "ready" ? "Ready to sync" : "Not connected",
+      directHeart && payload.watch?.heart_rate_sync?.status === "current"
+        ? `${watchMetricPresentation("vitals.heart_rate", directHeart).value} bpm · ${galaxyMetrics} metrics`
+        : `${galaxyAge} · ${galaxyMetrics} metrics`,
+      galaxy.status === "live" || payload.watch?.heart_rate_sync?.status === "current" ? "live" : galaxy.status === "synced" ? "synced" : "idle",
+    );
+
+    const fitbit = watch.sources?.fitbit || {};
+    const fitbitMetrics = Number(fitbit.metric_count || 0);
+    const fitbitAge = fitbit.age_seconds === null || fitbit.age_seconds === undefined ? "No measurements" : formatAge(fitbit.age_seconds);
+    setSource(
+      "fitbit",
+      fitbit.status === "synced" ? "Synced" : fitbit.status === "ready" ? "Ready to sync" : "Not connected",
+      fitbit.status === "synced" ? `${fitbitAge} · ${fitbitMetrics} metrics` : fitbit.status === "ready" ? "Authorization or first sync pending" : "OAuth setup pending",
+      fitbit.status === "synced" ? "synced" : "idle",
+    );
   }
 
   function renderClinicalReview(payload) {
@@ -443,6 +494,7 @@
       android_health_connect: "Samsung Health via Health Connect",
       wear_health_services: "Direct Galaxy Watch",
       google_fit_takeout: "Google Fit historical export",
+      google_health_fitbit: "Fitbit Air · Google Health",
     };
     return labels[adapter] || adapter || "Source unavailable";
   }
@@ -495,16 +547,38 @@
     return { value: readableNumber(value), unit: unit === "count" ? "steps" : unit };
   }
 
-  function renderWatchMetricCards(latest) {
+  function renderWatchMetricCards(latest, latestBySource = {}) {
     const grid = $("#watch-latest-grid");
-    const metrics = Object.keys(latest).filter((metric) => metric !== "vitals.heart_rate").sort((left, right) => {
-      const leftIndex = watchMetricOrder.indexOf(left);
-      const rightIndex = watchMetricOrder.indexOf(right);
-      return (leftIndex < 0 ? 999 : leftIndex) - (rightIndex < 0 ? 999 : rightIndex) || left.localeCompare(right);
+    const sourceNames = { galaxy: "Galaxy", fitbit: "Fitbit Air", archive: "Google Fit archive" };
+    const entries = [];
+    const appendEntries = (sourceKey, observations) => {
+      Object.entries(observations || {}).forEach(([metric, observation]) => {
+        if (sourceKey === "galaxy" && metric === "vitals.heart_rate") return;
+        entries.push({ metric, observation, sourceKey });
+      });
+    };
+    appendEntries("galaxy", latestBySource.galaxy);
+    appendEntries("fitbit", latestBySource.fitbit);
+    Object.entries(latest || {}).forEach(([metric, observation]) => {
+      if (observation?.provenance?.adapter !== "google_fit_takeout") return;
+      if (entries.some((entry) => entry.metric === metric && entry.sourceKey === "archive")) return;
+      entries.push({ metric, observation, sourceKey: "archive" });
     });
-    setText("#signal-count", `${metrics.length + (latest["vitals.heart_rate"] ? 2 : 1)} connected signals`);
-    if (!metrics.length) {
-      grid.innerHTML = '<div class="available-empty">No watch measurements have been recorded yet.</div>';
+    if (!entries.length) {
+      Object.entries(latest || {}).forEach(([metric, observation]) => {
+        if (metric !== "vitals.heart_rate") entries.push({ metric, observation, sourceKey: "galaxy" });
+      });
+    }
+    entries.sort((left, right) => {
+      const leftIndex = watchMetricOrder.indexOf(left.metric);
+      const rightIndex = watchMetricOrder.indexOf(right.metric);
+      return (leftIndex < 0 ? 999 : leftIndex) - (rightIndex < 0 ? 999 : rightIndex)
+        || left.metric.localeCompare(right.metric)
+        || left.sourceKey.localeCompare(right.sourceKey);
+    });
+    setText("#signal-count", `${entries.length + 2} visible signals · source labeled`);
+    if (!entries.length) {
+      grid.innerHTML = '<div class="available-empty">No Galaxy or Fitbit measurements have been recorded yet.</div>';
       return;
     }
 
@@ -544,10 +618,9 @@
       "vitals.blood_glucose": "icon-droplet",
     };
     const groups = { recovery: [], activity: [], findings: [], health: [] };
-    metrics.forEach((metric) => groups[metricGroup(metric)].push(metric));
+    entries.forEach((entry) => groups[metricGroup(entry.metric)].push(entry));
 
-    const cardMarkup = (metric) => {
-      const observation = latest[metric];
+    const cardMarkup = ({ metric, observation, sourceKey }) => {
       const presentation = watchMetricPresentation(metric, observation);
       const ageSeconds = Number(observation.observation_recency?.measurement_age_seconds);
       const age = formatAge(ageSeconds);
@@ -556,22 +629,22 @@
       const finding = ["cardiac.irregular_rhythm_notification", "sleep.apnea_detected_sign"].includes(metric);
       const eventLabel = observation.local_date || formatDate(observationTime(observation));
       return `
-        <button type="button" class="health-metric-card ${finding ? "vendor-finding-card" : ""}" data-metric="${escapeHtml(metric)}" aria-label="Open ${escapeHtml(label)} history and graph">
+        <button type="button" class="health-metric-card source-card-${escapeHtml(sourceKey)} ${finding ? "vendor-finding-card" : ""}" data-metric="${escapeHtml(metric)}" aria-label="Open ${escapeHtml(label)} history and graph">
           <div class="metric-card-top"><span class="metric-icon"><svg><use href="#${metricIcons[metric] || "icon-activity"}"/></svg></span><span class="metric-age ${ageTone}">${escapeHtml(age)}</span></div>
           <span class="metric-label">${escapeHtml(label)}</span>
           <div class="metric-value"><strong>${escapeHtml(presentation.value)}</strong>${presentation.unit ? `<small>${escapeHtml(presentation.unit)}</small>` : ""}</div>
-          <p class="metric-meta">${escapeHtml(adapterLabel(observation))}</p>
+          <p class="metric-meta"><span class="metric-source source-${escapeHtml(sourceKey)}">${escapeHtml(sourceNames[sourceKey])}</span>${escapeHtml(adapterLabel(observation))}</p>
           <p class="metric-time">Recorded ${escapeHtml(eventLabel)}</p>
         </button>
       `;
     };
 
-    grid.innerHTML = Object.entries(groups).filter(([, groupMetrics]) => groupMetrics.length).map(([groupName, groupMetrics]) => {
+    grid.innerHTML = Object.entries(groups).filter(([, groupEntries]) => groupEntries.length).map(([groupName, groupEntries]) => {
       const detail = groupDetails[groupName];
       return `
         <section class="signal-group signal-${groupName}">
           <div class="signal-group-heading"><span class="signal-group-icon"><svg><use href="#${detail.icon}"/></svg></span><div><h3>${detail.label}</h3><p>${detail.description}</p></div></div>
-          <div class="signal-cards">${groupMetrics.map(cardMarkup).join("")}</div>
+          <div class="signal-cards">${groupEntries.map(cardMarkup).join("")}</div>
         </section>
       `;
     }).join("");
@@ -582,18 +655,21 @@
     const latest = watch.latest || {};
     const status = $("#watch-status-chip");
     const glucoseCurrent = payload.current?.stream?.current ?? payload.current?.freshness?.status === "fresh";
+    const galaxyReporting = ["live", "synced"].includes(watch.sources?.galaxy?.status);
+    const fitbitReporting = watch.sources?.fitbit?.status === "synced";
+    const reportingCount = Number(Boolean(glucoseCurrent)) + Number(galaxyReporting) + Number(fitbitReporting);
     if (!glucoseCurrent) {
       status.textContent = payload.current?.freshness?.status === "recent" ? "Glucose delayed" : "Glucose unavailable";
       status.className = "state-chip error";
+    } else if (reportingCount) {
+      status.textContent = `${reportingCount} ${reportingCount === 1 ? "source" : "sources"} reporting`;
+      status.className = "state-chip ok";
     } else if (!watch.enabled) {
       status.textContent = "Setup pending";
       status.className = "state-chip";
     } else if (!watch.configured) {
       status.textContent = "Pairing required";
       status.className = "state-chip near";
-    } else if (watch.last_upload) {
-      status.textContent = "Connected";
-      status.className = "state-chip ok";
     } else {
       status.textContent = "Ready for first sync";
       status.className = "state-chip";
@@ -603,8 +679,8 @@
     setText("#watch-upload-time", watch.last_upload ? formatDate(watch.last_upload.received_at_utc) : "No upload recorded");
     setText("#watch-history-count", `${Number(watch.history?.count || 0).toLocaleString()} observations`);
     setText("#watch-retention", `${Number(watch.retention_days || 0).toLocaleString()} days`);
-    setText("#watch-authority", watch.authoritative_source || "Samsung Health remains authoritative.");
-    renderWatchMetricCards(latest);
+    setText("#watch-authority", watch.authoritative_source || "Connected source apps remain authoritative.");
+    renderWatchMetricCards(latest, watch.latest_by_source || {});
 
     const body = $("#watch-readings-body");
     const recent = watch.recent || [];
@@ -627,7 +703,7 @@
     availabilityBody.innerHTML = availability.length ? availability.map((item) => `
       <tr>
         <td>${escapeHtml(watchMetricLabels[item.metric] || item.metric)}</td>
-        <td>${escapeHtml(({ android_samsung_health_data: "Samsung Health Data SDK", android_health_connect: "Health Connect", wear_health_services: "Direct Galaxy Watch" })[item.adapter_id] || item.adapter_id)}</td>
+        <td>${escapeHtml(({ android_samsung_health_data: "Samsung Health Data SDK", android_health_connect: "Health Connect", wear_health_services: "Direct Galaxy Watch", google_health_fitbit: "Fitbit Air · Google Health" })[item.adapter_id] || item.adapter_id)}</td>
         <td><span class="availability-state ${item.stale ? "is-stale" : ""}">${escapeHtml(String(item.state || "unknown").replaceAll("_", " "))}</span></td>
         <td>${escapeHtml(item.checked_at_utc ? formatDate(item.checked_at_utc) : "No report")}</td>
       </tr>
@@ -1110,6 +1186,7 @@
       ...state.payload.watch.latest,
       ...payload.watch.latest,
     };
+    state.payload.watch.direct_heart_rate = payload.watch.direct_heart_rate;
     state.payload.watch.heart_rate_sync = payload.watch.heart_rate_sync;
 
     const heart = payload.watch.latest?.["vitals.heart_rate"];
@@ -1186,15 +1263,16 @@
     const question = $("#question-input").value.trim();
     const hours = rangeHours[state.range];
     const prompt = [
-      "Use the Personal State MCP to answer this question about my available glucose and watch data:",
+      "Use the Personal State MCP to answer this question about my available Libre glucose, Galaxy Watch/Samsung Health, and Fitbit Air data:",
       question || "What stands out in the selected period?",
       "",
       `Selected range: ${rangeLabels[state.range]}.`,
       `Call health.current_state(), health.context(), and health.glucose_recent(hours=${hours}, limit=5000).`,
       "Call health.watch() and use health.watch_recent() only for a specific recorded metric when history is needed.",
       "State source, attribution, measurement time, received or ingest time, freshness, and important data gaps.",
+      "Treat direct Galaxy heart rate as live only when it is within ten seconds. Treat Fitbit/Google Health values as synchronized records, never live.",
       "Use the configured 80 mg/dL threshold only as decision-support context.",
-      "Samsung/watch synchronization status is unknown. Do not treat missing data as normal.",
+      "Compare the three sources on their shared recorded-time axis, without implying that different sampling cadences are equivalent. Do not treat missing data as normal.",
       "Do not diagnose causality or provide treatment, dosing, food, driving, or exercise instructions.",
     ].join("\n");
     try {
@@ -1226,7 +1304,7 @@
     tooltip.innerHTML = `
       <span class="tooltip-time">${escapeHtml(formatDate(new Date(nearest.time).toISOString()))}</span>
       ${showGlucose ? `<span class="tooltip-row glucose"><b>Glucose</b><strong>${escapeHtml(nearbyGlucose.point.value_mg_dl)} mg/dL</strong></span>` : '<span class="tooltip-row muted"><b>Glucose</b><span>No nearby reading</span></span>'}
-      ${showHeart ? `<span class="tooltip-row heart"><b>Heart rate</b><strong>${escapeHtml(nearbyHeart.point.value)} bpm</strong></span>` : '<span class="tooltip-row muted"><b>Heart rate</b><span>No nearby sample</span></span>'}
+      ${showHeart ? `<span class="tooltip-row heart"><b>Heart rate · ${escapeHtml(adapterLabel({ provenance: { adapter: nearbyHeart.point.adapter } }))}</b><strong>${escapeHtml(nearbyHeart.point.value)} bpm</strong></span>` : '<span class="tooltip-row muted"><b>Heart rate</b><span>No nearby sample</span></span>'}
     `;
     tooltip.hidden = false;
     const left = Math.min(rect.width - 224, Math.max(8, nearest.x + 12));

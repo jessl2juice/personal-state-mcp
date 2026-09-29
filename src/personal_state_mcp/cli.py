@@ -1,17 +1,26 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 
 from .adapters.libre_linkup import LibreLinkUpAdapter
+from .adapters.google_health import (
+    GoogleHealthAdapter,
+    GoogleHealthClient,
+    authorization_url,
+    complete_authorization,
+    read_oauth_client,
+)
 from .collector import Collector
 from .config import load_config
 from .secrets import (
     delete_libre_password,
     delete_watch_access_credentials,
     delete_watch_secrets,
+    delete_google_health_credentials,
+    get_google_health_credentials,
     set_libre_password,
 )
 from .storage import StateStore
@@ -19,9 +28,12 @@ from .history_import import inspect_history_export, parse_google_fit_takeout, pa
 
 
 def _build_collector(store: StateStore, config):
+    adapters = [LibreLinkUpAdapter(config)]
+    if config.google_health_enabled:
+        adapters.append(GoogleHealthAdapter(config))
     return Collector(
         store=store,
-        adapters=[LibreLinkUpAdapter(config)],
+        adapters=adapters,
         min_poll_interval_seconds=config.min_poll_interval_seconds,
     )
 
@@ -76,6 +88,9 @@ def cmd_delete_credentials(args) -> int:
         delete_watch_secrets(config.watch_device_id, missing_ok=True)
         delete_watch_access_credentials(config.watch_device_id, missing_ok=True)
         deleted.append("watch")
+    if get_google_health_credentials() is not None:
+        delete_google_health_credentials(missing_ok=True)
+        deleted.append("google_health")
     print(json.dumps({"credentials_deleted": deleted}, indent=2))
     return 0
 
@@ -162,6 +177,84 @@ def cmd_import_google_fit(args) -> int:
     return 0
 
 
+def cmd_google_health_connect(args) -> int:
+    client = read_oauth_client(Path(args.credentials))
+    if not args.code:
+        print(json.dumps({"authorization_required": True, "authorization_url": authorization_url(client)}, indent=2))
+        return 0
+    print(json.dumps(complete_authorization(client, args.code), indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_google_health_status(args) -> int:
+    credentials = get_google_health_credentials()
+    payload: dict[str, object] = {"connected": credentials is not None}
+    if credentials:
+        payload["scopes"] = credentials.get("scopes", "").split()
+        try:
+            devices = GoogleHealthClient.from_keyring().paired_devices()
+            payload["paired_devices"] = [
+                {
+                    "device_version": item.get("deviceVersion"),
+                    "device_type": item.get("deviceType"),
+                    "battery_status": item.get("batteryStatus"),
+                    "battery_level": item.get("batteryLevel"),
+                    "last_sync_time": item.get("lastSyncTime"),
+                }
+                for item in devices
+            ]
+        except Exception as exc:
+            payload["connection_error"] = str(exc)
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
+def _persist_google_health_result(store: StateStore, result) -> dict[str, object]:
+    stored = store.import_health_observations(result.observations)
+    return {
+        "adapter": result.adapter,
+        "status": result.status,
+        "observations_seen": len(result.observations),
+        "observations_inserted": stored["inserted"],
+        "duplicates": stored["duplicates"],
+        "errors": [error.public_dict() for error in result.errors],
+        "metadata": result.metadata,
+    }
+
+
+def cmd_google_health_sync(args) -> int:
+    config = load_config()
+    store = StateStore(config.db_path)
+    adapter = GoogleHealthAdapter(config)
+    end = datetime.now(timezone.utc)
+    result = adapter.collect_range(end - timedelta(hours=max(1, args.hours)), end)
+    print(json.dumps(_persist_google_health_result(store, result), indent=2, sort_keys=True))
+    return 0 if result.status != "error" else 1
+
+
+def cmd_google_health_backfill(args) -> int:
+    config = load_config()
+    store = StateStore(config.db_path)
+    adapter = GoogleHealthAdapter(config)
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=max(1, args.days))
+    cursor = start
+    totals = {"windows": 0, "observations_seen": 0, "observations_inserted": 0, "duplicates": 0, "errors": []}
+    while cursor < end:
+        window_end = min(cursor + timedelta(days=14), end)
+        payload = _persist_google_health_result(store, adapter.collect_range(cursor, window_end))
+        totals["windows"] += 1
+        totals["observations_seen"] += int(payload["observations_seen"])
+        totals["observations_inserted"] += int(payload["observations_inserted"])
+        totals["duplicates"] += int(payload["duplicates"])
+        totals["errors"].extend(payload["errors"])
+        cursor = window_end
+    totals["database"] = str(config.db_path)
+    totals["requested_days"] = args.days
+    print(json.dumps(totals, indent=2, sort_keys=True))
+    return 0 if not totals["errors"] else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Personal State MCP local utilities.")
     sub = parser.add_subparsers(required=True)
@@ -181,7 +274,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     delete_credentials = sub.add_parser(
         "delete-credentials",
-        help="Delete configured LibreLinkUp and watch credentials from the OS keychain.",
+        help="Delete configured LibreLinkUp, watch, and Google Health credentials from the OS keychain.",
     )
     delete_credentials.add_argument("--yes", action="store_true")
     delete_credentials.set_defaults(func=cmd_delete_credentials)
@@ -222,6 +315,25 @@ def build_parser() -> argparse.ArgumentParser:
     google_fit_import.add_argument("path")
     google_fit_import.add_argument("--dry-run", action="store_true", help="Parse and report without changing the database.")
     google_fit_import.set_defaults(func=cmd_import_google_fit)
+
+    google_connect = sub.add_parser(
+        "google-health-connect",
+        help="Connect a Google Health account using a downloaded OAuth client JSON file.",
+    )
+    google_connect.add_argument("credentials")
+    google_connect.add_argument("--code", help="Authorization code or complete redirected URL returned by Google.")
+    google_connect.set_defaults(func=cmd_google_health_connect)
+
+    google_status = sub.add_parser("google-health-status", help="Show Google Health connection and paired-device status.")
+    google_status.set_defaults(func=cmd_google_health_status)
+
+    google_sync = sub.add_parser("google-health-sync", help="Import recent Fitbit and Google wearable observations.")
+    google_sync.add_argument("--hours", type=int, default=36)
+    google_sync.set_defaults(func=cmd_google_health_sync)
+
+    google_backfill = sub.add_parser("google-health-backfill", help="Import historical Fitbit and Google wearable observations.")
+    google_backfill.add_argument("--days", type=int, default=365)
+    google_backfill.set_defaults(func=cmd_google_health_backfill)
 
     return parser
 

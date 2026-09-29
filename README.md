@@ -36,7 +36,7 @@ See [docs/design.md](docs/design.md) for the detailed design and source links. I
 - Samsung's stress score, resting heart rate, HRV, skin temperature, floors, and activity-tracker active-time summary are not in Samsung's documented Health Connect export mapping. The Health Connect adapter labels those categories by source and never infers stress from heart rate, sleep, or other signals.
 - The server now has a closed v2 contract for richer Samsung Health Data SDK records: continuous blood oxygen, sleep sessions and score, skin temperature, Energy Score, irregular-rhythm notifications, sleep-apnea detected signs, floors, and active time. These metrics are denied to MCP agents by default.
 - The Samsung SDK phone adapter is gated on obtaining the proprietary SDK and Samsung authorization. The SDK binary is not committed or redistributed by this public repository.
-- Future Fitbit work should target Google Health API rather than new reliance on the legacy Fitbit Web API.
+- Google Fitbit Air support uses Google Health API v4 with read-only activity, health-metric, and sleep scopes. It contributes recent wearable context to the existing MCP tools and is never mislabeled as second-by-second live data.
 
 ## Install
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 
-from personal_state_mcp.models import ErrorInfo, GlucoseReading
+from personal_state_mcp.models import ErrorInfo, GlucoseReading, HealthObservation
 
 
 @dataclass(frozen=True)
@@ -13,6 +13,7 @@ class CollectionResult:
     started_at: datetime
     finished_at: datetime
     readings: list[GlucoseReading] = field(default_factory=list)
+    observations: list[HealthObservation] = field(default_factory=list)
     status: str = "ok"
     errors: list[ErrorInfo] = field(default_factory=list)
     metadata: dict[str, object] = field(default_factory=dict)
