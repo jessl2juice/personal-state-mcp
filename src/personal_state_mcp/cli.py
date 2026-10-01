@@ -255,6 +255,25 @@ def cmd_google_health_backfill(args) -> int:
     return 0 if not totals["errors"] else 1
 
 
+def cmd_google_health_disconnect(args) -> int:
+    if not args.yes:
+        raise SystemExit("Refusing to disconnect Google Health without --yes.")
+    config = load_config()
+    store = StateStore(config.db_path)
+    had_credentials = get_google_health_credentials() is not None
+    delete_google_health_credentials(missing_ok=True)
+    deleted_observations = 0
+    if not args.retain_history:
+        deleted_observations = store.delete_watch_source_history(("google_health_fitbit",))
+    print(json.dumps({
+        "adapter_ids": ["google_health_fitbit"],
+        "credentials_deleted": had_credentials,
+        "local_history": "retained" if args.retain_history else "deleted",
+        "observations_deleted": deleted_observations,
+    }, indent=2, sort_keys=True))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Personal State MCP local utilities.")
     sub = parser.add_subparsers(required=True)
@@ -334,6 +353,18 @@ def build_parser() -> argparse.ArgumentParser:
     google_backfill = sub.add_parser("google-health-backfill", help="Import historical Fitbit and Google wearable observations.")
     google_backfill.add_argument("--days", type=int, default=365)
     google_backfill.set_defaults(func=cmd_google_health_backfill)
+
+    google_disconnect = sub.add_parser(
+        "google-health-disconnect",
+        help="Delete the Google Health OAuth grant and, by default, local Google/Fitbit observations.",
+    )
+    google_disconnect.add_argument("--yes", action="store_true")
+    google_disconnect.add_argument(
+        "--retain-history",
+        action="store_true",
+        help="Delete only the OAuth grant and keep already synchronized local Google/Fitbit observations.",
+    )
+    google_disconnect.set_defaults(func=cmd_google_health_disconnect)
 
     return parser
 

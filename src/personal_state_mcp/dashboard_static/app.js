@@ -14,6 +14,7 @@
     liveLoading: false,
     heartCutoffTimer: null,
     detailMetric: null,
+    detailSource: null,
     detailRange: "24h",
     detailPayload: null,
   };
@@ -107,6 +108,38 @@
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
 
+  function requestJson(url, options = {}) {
+    const requestOptions = { cache: "no-store", ...options };
+    if (typeof window.fetch === "function") return window.fetch(url, requestOptions);
+
+    return new Promise((resolve, reject) => {
+      if (typeof window.XMLHttpRequest !== "function") {
+        reject(new Error("No browser request API is available"));
+        return;
+      }
+
+      const method = requestOptions.method || "GET";
+      const requestUrl =
+        method.toUpperCase() === "GET" && requestOptions.cache === "no-store"
+          ? `${url}${url.includes("?") ? "&" : "?"}_=${Date.now()}`
+          : url;
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, requestUrl, true);
+      Object.entries(requestOptions.headers || {}).forEach(([key, value]) => xhr.setRequestHeader(key, value));
+      xhr.onload = () => {
+        const response = {
+          ok: xhr.status >= 200 && xhr.status < 300,
+          status: xhr.status,
+          json: async () => JSON.parse(xhr.responseText || "null"),
+          text: async () => xhr.responseText,
+        };
+        resolve(response);
+      };
+      xhr.onerror = () => reject(new Error("Browser request failed"));
+      xhr.send(requestOptions.body || null);
+    });
+  }
+
   function escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -194,11 +227,37 @@
     if (status) element.classList.add(status);
   }
 
+  function syncIsDegraded(payload) {
+    return Boolean(payload?.sync?.degraded);
+  }
+
+  function renderSyncRail(payload) {
+    if (!syncIsDegraded(payload)) return false;
+    const sync = payload.sync;
+    const lastRun = sync.last_run;
+    setText("#rail-status", sync.status === "stored_history_only" ? "Stored history only" : "Sync degraded");
+    setStatusClass($("#rail-status-dot"), "error");
+    setText("#rail-updated", lastRun?.finished_at ? `${sync.message} Last attempt ${formatDate(lastRun.finished_at)}.` : sync.message);
+    return true;
+  }
+
+  function renderLiveEndpointFailure() {
+    const status = $("#watch-status-chip");
+    if (status) {
+      status.textContent = "Live refresh failed";
+      status.className = "state-chip error";
+    }
+    setText("#rail-status", "Live refresh failed");
+    setStatusClass($("#rail-status-dot"), "error");
+    setText("#rail-updated", "Stored history is still visible; current live refresh is degraded.");
+  }
+
   function renderCurrent(payload) {
     const { reading, freshness, threshold_context: threshold, stream = {} } = payload.current;
     const streamStatus = stream.status || (freshness.status === "fresh" ? "current" : freshness.status === "recent" ? "delayed" : reading ? "stopped" : "unavailable");
     const streamSaysCurrent = typeof stream.current === "boolean" ? stream.current : freshness.status === "fresh";
     const glucoseIsCurrent = Boolean(reading) && streamSaysCurrent && freshness.status === "fresh";
+    const glucoseSource = reading ? adapterLabel(reading) : "LibreLinkUp follower";
     const glucoseAge = formatAge(freshness.measurement_age_seconds);
     const freshnessLabel = glucoseIsCurrent
       ? `Current · ${glucoseAge}`
@@ -216,9 +275,9 @@
     setText("#current-value", glucoseIsCurrent ? reading.value_mg_dl : "No current data");
     setText("#current-glucose-unit", glucoseIsCurrent ? "mg/dL" : "");
     setText("#current-time", glucoseIsCurrent
-      ? `Measured ${formatDate(reading.measured_at)} · received ${formatTime(reading.received_at)}`
+      ? `${glucoseSource} · measured ${formatDate(reading.measured_at)} · received ${formatTime(reading.received_at)}`
       : reading
-        ? `Last recorded: ${reading.value_mg_dl} mg/dL at ${formatDate(reading.measured_at)} · historical only`
+        ? `Last recorded: ${reading.value_mg_dl} mg/dL at ${formatDate(reading.measured_at)} · ${glucoseSource} · historical only`
         : "No glucose measurement has been received");
     setText("#data-age", glucoseIsCurrent ? glucoseAge : `Last reading ${glucoseAge}`);
     setText("#glucose-stream-alert-title", streamStatus === "delayed" ? "Glucose update delayed" : "No current glucose data");
@@ -245,6 +304,7 @@
     const heartSync = payload.watch?.heart_rate_sync || {};
     const heartStatus = heartRecency.status === "old" ? "stale" : heartRecency.status;
     const heartPresentation = watchMetricPresentation("vitals.heart_rate", heart);
+    const heartSource = adapterLabel(heart);
     const heartAgeSeconds = Number(heartRecency.measurement_age_seconds);
     const heartIsCurrent = Boolean(heart)
       && heartSync.status === "current"
@@ -265,9 +325,9 @@
     setText("#current-heart-value", heartIsCurrent ? heartPresentation.value : "No live data");
     setText("#current-heart-unit", heartIsCurrent ? "bpm" : "");
     setText("#current-heart-time", heartIsCurrent
-      ? `Measured ${formatDate(heartSampleTime(heart))} · uploaded ${formatDate(heart.ingested_at_server)}`
+      ? `${heartSource} · measured ${formatDate(heartSampleTime(heart))} · uploaded ${formatDate(heart.ingested_at_server)}`
       : heart
-        ? `Historical only: ${heartPresentation.value} bpm recorded ${formatDate(heartSampleTime(heart))} (${formatAge(heartRecency.measurement_age_seconds)})`
+        ? `Historical only: ${heartPresentation.value} bpm recorded ${formatDate(heartSampleTime(heart))} · ${heartSource} · ${formatAge(heartRecency.measurement_age_seconds)}`
         : "No heart-rate sample has been received");
 
     if (!glucoseIsCurrent) {
@@ -296,7 +356,9 @@
         loadLive({ quiet: true });
       }, cutoffDelay);
     }
+    renderSyncRail(payload);
     renderSources(payload);
+    renderSnapshotStatus(payload);
   }
 
   function renderSources(payload) {
@@ -323,24 +385,45 @@
     const directHeart = payload.watch?.direct_heart_rate || watch.direct_heart_rate;
     const galaxyMetrics = Number(galaxy.metric_count || 0);
     const galaxyAge = galaxy.age_seconds === null || galaxy.age_seconds === undefined ? "No measurements" : formatAge(galaxy.age_seconds);
+    const directHeartCurrent = payload.watch?.heart_rate_sync?.status === "current";
     setSource(
       "galaxy",
-      galaxy.status === "live" || payload.watch?.heart_rate_sync?.status === "current" ? "Live" : galaxy.status === "synced" ? "Recorded" : galaxy.status === "ready" ? "Ready to sync" : "Not connected",
-      directHeart && payload.watch?.heart_rate_sync?.status === "current"
-        ? `${watchMetricPresentation("vitals.heart_rate", directHeart).value} bpm · ${galaxyMetrics} metrics`
+      directHeartCurrent ? "Direct heart live" : galaxy.status === "synced" ? "Recorded" : galaxy.status === "ready" ? "Ready to sync" : "Not connected",
+      directHeart && directHeartCurrent
+        ? `${watchMetricPresentation("vitals.heart_rate", directHeart).value} bpm live · ${galaxyMetrics} recorded metrics`
         : `${galaxyAge} · ${galaxyMetrics} metrics`,
-      galaxy.status === "live" || payload.watch?.heart_rate_sync?.status === "current" ? "live" : galaxy.status === "synced" ? "synced" : "idle",
+      directHeartCurrent ? "live" : galaxy.status === "synced" ? "synced" : "idle",
     );
 
     const fitbit = watch.sources?.fitbit || {};
     const fitbitMetrics = Number(fitbit.metric_count || 0);
     const fitbitAge = fitbit.age_seconds === null || fitbit.age_seconds === undefined ? "No measurements" : formatAge(fitbit.age_seconds);
+    const fitbitStatusLabel = fitbit.status === "sync_error" || fitbit.status === "error"
+      ? "Sync failing"
+      : fitbit.status === "stale"
+        ? "Stale sync"
+        : fitbit.status === "synced"
+          ? "Synced"
+          : fitbit.status === "ready"
+            ? "Ready to sync"
+            : "Not connected";
+    const fitbitStatusDetail = fitbit.status === "sync_error" || fitbit.status === "error"
+      ? `${fitbitAge} · ${fitbitMetrics} stored metrics · Google Health refresh failing`
+      : fitbit.status === "stale"
+        ? `${fitbitAge} · ${fitbitMetrics} stored metrics · refresh overdue`
+        : fitbit.status === "synced"
+          ? `${fitbitAge} · ${fitbitMetrics} metrics`
+          : fitbit.status === "ready"
+            ? "Authorization or first sync pending"
+            : "OAuth setup pending";
     setSource(
       "fitbit",
-      fitbit.status === "synced" ? "Synced" : fitbit.status === "ready" ? "Ready to sync" : "Not connected",
-      fitbit.status === "synced" ? `${fitbitAge} · ${fitbitMetrics} metrics` : fitbit.status === "ready" ? "Authorization or first sync pending" : "OAuth setup pending",
-      fitbit.status === "synced" ? "synced" : "idle",
+      fitbitStatusLabel,
+      fitbitStatusDetail,
+      fitbit.status === "synced" ? "synced" : fitbit.status === "stale" ? "idle" : fitbit.status === "sync_error" || fitbit.status === "error" ? "error" : "idle",
     );
+    renderFitbitAirPanel(watch);
+    renderGalaxyWatchPanel(watch);
   }
 
   function renderClinicalReview(payload) {
@@ -488,15 +571,38 @@
   }
 
   function adapterLabel(observation) {
-    const adapter = observation?.provenance?.adapter;
+    const provenance = observation?.provenance || {};
+    const adapter = provenance.adapter;
+    const source = provenance.source;
+    if (adapter === "google_health_fitbit") {
+      return source === "Fitbit Air via Google Health" ? source : "Google Health synchronized wearable";
+    }
+    if (adapter === "android_health_connect_fitbit") return "Fitbit via Health Connect";
+    if (adapter === "libre_linkup" && source === "libre_linkup_follower") return "LibreLinkUp follower";
+    if (adapter === "wear_health_services") return "Direct Galaxy Watch";
+    if (source) return source;
     const labels = {
       android_samsung_health_data: "Samsung Health Data SDK",
       android_health_connect: "Samsung Health via Health Connect",
+      android_health_connect_fitbit: "Fitbit via Health Connect",
       wear_health_services: "Direct Galaxy Watch",
       google_fit_takeout: "Google Fit historical export",
-      google_health_fitbit: "Fitbit Air · Google Health",
+      google_health_fitbit: "Google Health synchronized wearable",
     };
     return labels[adapter] || adapter || "Source unavailable";
+  }
+
+  function sourceFilterForObservation(observation, fallback = null) {
+    const adapter = observation?.provenance?.adapter;
+    const filters = {
+      android_samsung_health_data: "samsung_health_history",
+      android_health_connect: "health_connect_history",
+      android_health_connect_fitbit: "fitbit_health_connect",
+      wear_health_services: "galaxy_direct_live",
+      google_fit_takeout: "historical_imports",
+      google_health_fitbit: "google_health_sync",
+    };
+    return filters[adapter] || fallback;
   }
 
   function observationTime(observation) {
@@ -547,9 +653,168 @@
     return { value: readableNumber(value), unit: unit === "count" ? "steps" : unit };
   }
 
+  function renderFitbitBiofeedbackStatus(watch) {
+    const element = $("#fitbit-biofeedback-status");
+    if (!element) return;
+    const status = watch?.fitbit_biofeedback || {};
+    const age = Number.isFinite(Number(status.age_seconds)) ? formatAge(Number(status.age_seconds)) : "no current age";
+    if (status.usable) {
+      element.textContent = `Casey biofeedback ready · Fitbit heart rate ${age}`;
+      element.className = "biofeedback-status is-current";
+    } else if (status.status === "blocked") {
+      element.textContent = "Casey biofeedback unavailable · Google Health/Fitbit sync is blocked";
+      element.className = "biofeedback-status is-blocked";
+    } else if (status.status === "stale") {
+      element.textContent = `Casey biofeedback unavailable · Fitbit heart rate is ${age}`;
+      element.className = "biofeedback-status is-stale";
+    } else if (status.status === "missing") {
+      element.textContent = "Casey biofeedback unavailable · no Fitbit heart-rate record";
+      element.className = "biofeedback-status is-missing";
+    } else {
+      element.textContent = status.message || "Casey biofeedback waiting for Fitbit currentness.";
+      element.className = "biofeedback-status";
+    }
+  }
+
+  function renderFitbitAirPanel(watch) {
+    const grid = $("#fitbit-air-grid");
+    const status = $("#fitbit-air-status");
+    if (!grid || !status) return;
+    renderFitbitBiofeedbackStatus(watch);
+
+    const source = watch?.sources?.fitbit || {};
+    const fitbit = watch?.latest_by_source?.fitbit || {};
+    const metrics = [
+      "vitals.heart_rate",
+      "vitals.oxygen_saturation",
+      "sleep.session",
+      "activity.steps",
+      "activity.active_zone_minutes",
+    ];
+    const icons = {
+      "vitals.heart_rate": "icon-heart",
+      "vitals.oxygen_saturation": "icon-wind",
+      "sleep.session": "icon-moon",
+      "activity.steps": "icon-steps",
+      "activity.active_zone_minutes": "icon-zap",
+    };
+    const cards = metrics
+      .map((metric) => ({ metric, observation: fitbit[metric] }))
+      .filter(({ observation }) => observation);
+
+    if (source.status === "sync_error" || source.status === "error") {
+      status.textContent = `${Number(source.metric_count || cards.length).toLocaleString()} stored metrics · Google Health sync failing`;
+      status.className = "state-chip error";
+    } else if (source.status === "stale") {
+      status.textContent = `${Number(source.metric_count || cards.length).toLocaleString()} stored metrics · latest ${formatAge(source.age_seconds)} · refresh overdue`;
+      status.className = "state-chip near";
+    } else if (source.status === "synced") {
+      status.textContent = `${Number(source.metric_count || cards.length).toLocaleString()} metrics · latest ${formatAge(source.age_seconds)}`;
+      status.className = "state-chip ok";
+    } else if (source.status === "ready") {
+      status.textContent = "Ready to sync";
+      status.className = "state-chip near";
+    } else {
+      status.textContent = "Not connected";
+      status.className = "state-chip error";
+    }
+
+    if (!cards.length) {
+      grid.innerHTML = '<div class="available-empty">No Fitbit Air records have synced yet.</div>';
+      return;
+    }
+
+    grid.innerHTML = cards.map(({ metric, observation }) => {
+      const presentation = watchMetricPresentation(metric, observation);
+      const ageSeconds = Number(observation.observation_recency?.measurement_age_seconds);
+      const age = formatAge(ageSeconds);
+      const eventAt = observationTime(observation);
+      const source = adapterLabel(observation);
+      return `
+        <button type="button" class="fitbit-air-card" data-metric="${escapeHtml(metric)}" data-source="google_health_sync" aria-label="Open ${escapeHtml(watchMetricLabels[metric] || metric)} history and graph">
+          <span class="fitbit-card-icon"><svg><use href="#${icons[metric] || "icon-activity"}"/></svg></span>
+          <span class="fitbit-card-label">${escapeHtml(watchMetricLabels[metric] || metric)}</span>
+          <span class="fitbit-card-value"><strong>${escapeHtml(presentation.value)}</strong>${presentation.unit ? `<small>${escapeHtml(presentation.unit)}</small>` : ""}</span>
+          <span class="fitbit-card-meta">${escapeHtml(age)} · ${escapeHtml(source)}</span>
+          <span class="fitbit-card-time">Recorded ${escapeHtml(formatDate(eventAt))}</span>
+        </button>
+      `;
+    }).join("");
+  }
+
+  function renderGalaxyWatchPanel(watch) {
+    const grid = $("#galaxy-watch-grid");
+    const status = $("#galaxy-watch-status");
+    if (!grid || !status) return;
+
+    const source = watch?.sources?.galaxy || {};
+    const galaxy = watch?.latest_by_source?.galaxy || {};
+    const directHeart = watch?.direct_heart_rate || galaxy["vitals.heart_rate"];
+    const pick = (metrics) => {
+      for (const metric of metrics) {
+        const observation = metric === "vitals.heart_rate" ? directHeart : galaxy[metric];
+        if (observation) return { metric, observation };
+      }
+      return null;
+    };
+    const panelSlots = [
+      { metrics: ["vitals.heart_rate"], icon: "icon-heart" },
+      { metrics: ["activity.steps"], icon: "icon-steps" },
+      { metrics: ["sleep.session", "sleep.samsung_session", "sleep.summary"], icon: "icon-moon" },
+      { metrics: ["vitals.oxygen_saturation", "vitals.oxygen_saturation_series"], icon: "icon-wind" },
+      { metrics: ["wellness.energy_score", "sleep.score", "vitals.skin_temperature"], icon: "icon-zap" },
+    ];
+    const cards = panelSlots
+      .map((slot) => {
+        const picked = pick(slot.metrics);
+        return picked ? { ...picked, icon: slot.icon } : null;
+      })
+      .filter(Boolean);
+
+    const metricCount = Number(source.metric_count || Object.keys(galaxy).length || cards.length);
+    const heartCurrent = watch?.heart_rate_sync?.status === "current";
+    if (source.status === "live" || heartCurrent) {
+      status.textContent = `Direct heart live · ${metricCount.toLocaleString()} recorded metrics · latest ${formatAge(source.age_seconds)}`;
+      status.className = "state-chip ok";
+    } else if (source.status === "synced") {
+      status.textContent = `Recorded · ${metricCount.toLocaleString()} metrics · latest ${formatAge(source.age_seconds)}`;
+      status.className = "state-chip ok";
+    } else if (source.status === "ready" || cards.length) {
+      status.textContent = cards.length ? `${cards.length} latest records` : "Ready to sync";
+      status.className = "state-chip near";
+    } else {
+      status.textContent = "Not connected";
+      status.className = "state-chip error";
+    }
+
+    if (!cards.length) {
+      grid.innerHTML = '<div class="available-empty">No Galaxy Watch records have synced yet.</div>';
+      return;
+    }
+
+    grid.innerHTML = cards.map(({ metric, observation, icon }) => {
+      const presentation = watchMetricPresentation(metric, observation);
+      const ageSeconds = Number(observation.observation_recency?.measurement_age_seconds);
+      const age = formatAge(ageSeconds);
+      const eventAt = observationTime(observation);
+      const sourceLabel = adapterLabel(observation);
+      const sourceFilter = sourceFilterForObservation(observation, "galaxy");
+      return `
+        <button type="button" class="galaxy-watch-card" data-metric="${escapeHtml(metric)}" data-source="${escapeHtml(sourceFilter)}" aria-label="Open ${escapeHtml(watchMetricLabels[metric] || metric)} history and graph">
+          <span class="fitbit-card-icon"><svg><use href="#${icon || "icon-activity"}"/></svg></span>
+          <span class="fitbit-card-label">${escapeHtml(watchMetricLabels[metric] || metric)}</span>
+          <span class="fitbit-card-value"><strong>${escapeHtml(presentation.value)}</strong>${presentation.unit ? `<small>${escapeHtml(presentation.unit)}</small>` : ""}</span>
+          <span class="fitbit-card-meta">${escapeHtml(age)} · ${escapeHtml(sourceLabel)}</span>
+          <span class="fitbit-card-time">Recorded ${escapeHtml(formatDate(eventAt))}</span>
+        </button>
+      `;
+    }).join("");
+  }
+
   function renderWatchMetricCards(latest, latestBySource = {}) {
     const grid = $("#watch-latest-grid");
     const sourceNames = { galaxy: "Galaxy", fitbit: "Fitbit Air", archive: "Google Fit archive" };
+    const sourceFilters = { galaxy: "galaxy", fitbit: "google_health_sync", archive: "historical_imports" };
     const entries = [];
     const appendEntries = (sourceKey, observations) => {
       Object.entries(observations || {}).forEach(([metric, observation]) => {
@@ -628,8 +893,9 @@
       const label = watchMetricLabels[metric] || metric;
       const finding = ["cardiac.irregular_rhythm_notification", "sleep.apnea_detected_sign"].includes(metric);
       const eventLabel = observation.local_date || formatDate(observationTime(observation));
+      const sourceFilter = sourceFilterForObservation(observation, sourceFilters[sourceKey]);
       return `
-        <button type="button" class="health-metric-card source-card-${escapeHtml(sourceKey)} ${finding ? "vendor-finding-card" : ""}" data-metric="${escapeHtml(metric)}" aria-label="Open ${escapeHtml(label)} history and graph">
+        <button type="button" class="health-metric-card source-card-${escapeHtml(sourceKey)} ${finding ? "vendor-finding-card" : ""}" data-metric="${escapeHtml(metric)}" data-source="${escapeHtml(sourceFilter)}" aria-label="Open ${escapeHtml(label)} history and graph">
           <div class="metric-card-top"><span class="metric-icon"><svg><use href="#${metricIcons[metric] || "icon-activity"}"/></svg></span><span class="metric-age ${ageTone}">${escapeHtml(age)}</span></div>
           <span class="metric-label">${escapeHtml(label)}</span>
           <div class="metric-value"><strong>${escapeHtml(presentation.value)}</strong>${presentation.unit ? `<small>${escapeHtml(presentation.unit)}</small>` : ""}</div>
@@ -650,15 +916,18 @@
     }).join("");
   }
 
-  function renderWatch(payload) {
+  function renderSnapshotStatus(payload) {
     const watch = payload.watch || {};
-    const latest = watch.latest || {};
     const status = $("#watch-status-chip");
+    if (!status) return;
     const glucoseCurrent = payload.current?.stream?.current ?? payload.current?.freshness?.status === "fresh";
     const galaxyReporting = ["live", "synced"].includes(watch.sources?.galaxy?.status);
     const fitbitReporting = watch.sources?.fitbit?.status === "synced";
     const reportingCount = Number(Boolean(glucoseCurrent)) + Number(galaxyReporting) + Number(fitbitReporting);
-    if (!glucoseCurrent) {
+    if (syncIsDegraded(payload)) {
+      status.textContent = payload.sync.status === "stored_history_only" ? "Stored history only" : "Sync degraded";
+      status.className = "state-chip error";
+    } else if (!glucoseCurrent) {
       status.textContent = payload.current?.freshness?.status === "recent" ? "Glucose delayed" : "Glucose unavailable";
       status.className = "state-chip error";
     } else if (reportingCount) {
@@ -674,12 +943,20 @@
       status.textContent = "Ready for first sync";
       status.className = "state-chip";
     }
+  }
+
+  function renderWatch(payload) {
+    const watch = payload.watch || {};
+    const latest = watch.latest || {};
+    renderSnapshotStatus(payload);
 
     setText("#watch-read-time", watch.last_upload ? formatDate(watch.last_upload.generated_at_utc) : "No read recorded");
     setText("#watch-upload-time", watch.last_upload ? formatDate(watch.last_upload.received_at_utc) : "No upload recorded");
     setText("#watch-history-count", `${Number(watch.history?.count || 0).toLocaleString()} observations`);
     setText("#watch-retention", `${Number(watch.retention_days || 0).toLocaleString()} days`);
     setText("#watch-authority", watch.authoritative_source || "Connected source apps remain authoritative.");
+    renderFitbitAirPanel(watch);
+    renderGalaxyWatchPanel(watch);
     renderWatchMetricCards(latest, watch.latest_by_source || {});
 
     const body = $("#watch-readings-body");
@@ -703,7 +980,7 @@
     availabilityBody.innerHTML = availability.length ? availability.map((item) => `
       <tr>
         <td>${escapeHtml(watchMetricLabels[item.metric] || item.metric)}</td>
-        <td>${escapeHtml(({ android_samsung_health_data: "Samsung Health Data SDK", android_health_connect: "Health Connect", wear_health_services: "Direct Galaxy Watch", google_health_fitbit: "Fitbit Air · Google Health" })[item.adapter_id] || item.adapter_id)}</td>
+        <td>${escapeHtml(({ android_samsung_health_data: "Samsung Health Data SDK", android_health_connect: "Health Connect", android_health_connect_fitbit: "Fitbit via Health Connect", wear_health_services: "Direct Galaxy Watch", google_health_fitbit: "Google Health synchronized wearable" })[item.adapter_id] || item.adapter_id)}</td>
         <td><span class="availability-state ${item.stale ? "is-stale" : ""}">${escapeHtml(String(item.state || "unknown").replaceAll("_", " "))}</span></td>
         <td>${escapeHtml(item.checked_at_utc ? formatDate(item.checked_at_utc) : "No report")}</td>
       </tr>
@@ -1132,7 +1409,8 @@
     if (!state.detailMetric) return;
     setText("#metric-detail-status", "Loading recorded history...");
     try {
-      const response = await fetch(`/api/watch/history?metric=${encodeURIComponent(state.detailMetric)}&range=${encodeURIComponent(state.detailRange)}`, { cache: "no-store" });
+      const sourceQuery = state.detailSource ? `&source=${encodeURIComponent(state.detailSource)}` : "";
+      const response = await requestJson(`/api/watch/history?metric=${encodeURIComponent(state.detailMetric)}&range=${encodeURIComponent(state.detailRange)}${sourceQuery}`);
       if (!response.ok) throw new Error("Metric history request failed");
       renderMetricHistory(await response.json());
     } catch (error) {
@@ -1141,8 +1419,9 @@
     }
   }
 
-  function openMetricHistory(metric) {
+  function openMetricHistory(metric, source = null) {
     state.detailMetric = metric;
+    state.detailSource = source;
     state.detailRange = state.range;
     state.detailPayload = null;
     setText("#metric-detail-title", watchMetricLabels[metric] || metric);
@@ -1165,7 +1444,7 @@
     if (state.loading) return;
     state.loading = true;
     try {
-      const response = await fetch(`/api/dashboard?range=${encodeURIComponent(state.range)}`, { cache: "no-store" });
+      const response = await requestJson(`/api/dashboard?range=${encodeURIComponent(state.range)}`);
       if (!response.ok) throw new Error("Dashboard data request failed");
       render(await response.json());
     } catch (error) {
@@ -1178,18 +1457,42 @@
   }
 
   function mergeLiveState(payload) {
-    renderCurrent(payload);
-    if (!state.payload) return;
+    if (!state.payload) {
+      renderCurrent(payload);
+      return;
+    }
 
+    const liveWatch = payload.watch || {};
+    state.payload.watch = state.payload.watch || {};
     state.payload.current = payload.current;
-    state.payload.watch.latest = {
-      ...state.payload.watch.latest,
-      ...payload.watch.latest,
+    state.payload.watch.sources = {
+      ...(state.payload.watch.sources || {}),
+      ...(liveWatch.sources || {}),
     };
-    state.payload.watch.direct_heart_rate = payload.watch.direct_heart_rate;
-    state.payload.watch.heart_rate_sync = payload.watch.heart_rate_sync;
+    state.payload.watch.direct_heart_rate = liveWatch.direct_heart_rate;
+    state.payload.watch.heart_rate_sync = liveWatch.heart_rate_sync;
+    state.payload.watch.fitbit_biofeedback = liveWatch.fitbit_biofeedback || state.payload.watch.fitbit_biofeedback;
+    state.payload.watch.latest_by_source = {
+      galaxy: {
+        ...(state.payload.watch.latest_by_source?.galaxy || {}),
+        ...(liveWatch.latest_by_source?.galaxy || {}),
+      },
+      fitbit: {
+        ...(state.payload.watch.latest_by_source?.fitbit || {}),
+        ...(liveWatch.latest_by_source?.fitbit || {}),
+      },
+    };
+    state.payload.watch.latest = {
+      ...(state.payload.watch.latest || {}),
+      ...(liveWatch.latest_by_source?.galaxy || {}),
+      ...(liveWatch.latest_by_source?.fitbit || {}),
+      ...(liveWatch.latest || {}),
+    };
 
-    const heart = payload.watch.latest?.["vitals.heart_rate"];
+    renderCurrent(state.payload);
+    renderWatchMetricCards(state.payload.watch.latest, state.payload.watch.latest_by_source || {});
+
+    const heart = liveWatch.latest?.["vitals.heart_rate"];
     const sample = heart?.payload?.samples?.at(-1);
     if (!sample?.time || sample.value === null || sample.value === undefined) return;
 
@@ -1217,11 +1520,12 @@
     if (state.liveLoading) return;
     state.liveLoading = true;
     try {
-      const response = await fetch("/api/live", { cache: "no-store" });
+      const response = await requestJson("/api/live");
       if (!response.ok) throw new Error("Live data request failed");
       mergeLiveState(await response.json());
     } catch (error) {
       if (!quiet) showMessage("Live sensor refresh is temporarily unavailable.", true);
+      renderLiveEndpointFailure();
     } finally {
       state.liveLoading = false;
     }
@@ -1232,7 +1536,7 @@
     button.disabled = true;
     button.classList.add("is-spinning");
     try {
-      const response = await fetch("/api/refresh", {
+      const response = await requestJson("/api/refresh", {
         method: "POST",
         headers: { "X-Personal-State-Token": token, "Content-Type": "application/json" },
         body: "{}",
@@ -1240,9 +1544,37 @@
       const result = await response.json();
       if (!response.ok || result.error) throw new Error("Refresh failed");
       await loadDashboard();
-      showMessage(result.status === "skipped" ? "The background collector is already current." : "LibreLinkUp data refreshed.");
+      showMessage(result.message || (result.status === "skipped" ? "LibreLinkUp is already current." : "LibreLinkUp data refreshed."));
     } catch (error) {
       showMessage("LibreLinkUp refresh failed. Stored history is still available.", true);
+    } finally {
+      button.disabled = false;
+      button.classList.remove("is-spinning");
+    }
+  }
+
+  async function refreshFitbitCurrentness() {
+    const button = $("#fitbit-refresh-button");
+    button.disabled = true;
+    button.classList.add("is-spinning");
+    try {
+      const response = await requestJson("/api/fitbit/refresh", {
+        method: "POST",
+        headers: { "X-Personal-State-Token": token, "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const result = await response.json();
+      if (!response.ok || result.error) throw new Error("Fitbit refresh failed");
+      await loadDashboard();
+      const isCurrent = Boolean(result.current_biofeedback_status?.usable);
+      showMessage(
+        isCurrent
+          ? "Fitbit currentness refreshed."
+          : result.current_biofeedback_status?.message || result.message || "Fitbit refresh completed, but biofeedback is not current yet.",
+        !isCurrent,
+      );
+    } catch (error) {
+      showMessage("Fitbit currentness refresh failed. Stored Fitbit history is still visible.", true);
     } finally {
       button.disabled = false;
       button.classList.remove("is-spinning");
@@ -1320,6 +1652,7 @@
     await loadDashboard();
   }));
   $("#refresh-button").addEventListener("click", refreshData);
+  $("#fitbit-refresh-button").addEventListener("click", refreshFitbitCurrentness);
   $("#print-button").addEventListener("click", () => window.print());
   $("#table-export-button").addEventListener("click", () => exportCsv("glucose"));
   $("#watch-export-button").addEventListener("click", () => exportCsv("watch"));
@@ -1333,7 +1666,15 @@
   $("#glucose-chart").addEventListener("mouseleave", () => { $("#chart-tooltip").hidden = true; });
   $("#watch-latest-grid").addEventListener("click", (event) => {
     const card = event.target.closest("[data-metric]");
-    if (card) openMetricHistory(card.dataset.metric);
+    if (card) openMetricHistory(card.dataset.metric, card.dataset.source || null);
+  });
+  $("#fitbit-air-grid").addEventListener("click", (event) => {
+    const card = event.target.closest("[data-metric]");
+    if (card) openMetricHistory(card.dataset.metric, card.dataset.source || null);
+  });
+  $("#galaxy-watch-grid").addEventListener("click", (event) => {
+    const card = event.target.closest("[data-metric]");
+    if (card) openMetricHistory(card.dataset.metric, card.dataset.source || null);
   });
   $$("[data-timeline-focus]").forEach((card) => {
     card.addEventListener("click", focusTimeline);

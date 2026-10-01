@@ -1,7 +1,7 @@
 # Google Health / Fitbit Air Adapter Design
 
-Document version: 1.0
-Date: 2026-09-29
+Document version: 1.1
+Date: 2026-10-01
 
 ## Purpose
 
@@ -9,10 +9,16 @@ Add Fitbit Air observations to Personal State so an authorized Casey agent can o
 
 ## Source and timing model
 
-Fitbit Air data is read through Google Health API v4. Fitbit devices synchronize only through the Fitbit mobile app. Google documents automatic synchronization at roughly 15-minute intervals when the app, Bluetooth, connectivity, and background execution are available. Therefore:
+Fitbit Air data currently enters Personal State through two synchronized paths:
+
+- Google Health API v4, with adapter id `google_health_fitbit`.
+- Android Health Connect phone ingest when the Fitbit phone app writes Health Connect records, with adapter id `android_health_connect_fitbit`.
+
+Fitbit devices synchronize only through the Fitbit mobile app or cloud/provider APIs. Google documents automatic synchronization at roughly 15-minute intervals when the app, Bluetooth, connectivity, and background execution are available. Health Connect records are likewise only as current as the Fitbit phone app's last write. Therefore:
 
 - only direct Wear Health Services heart rate may be labeled `live`;
 - Google Health heart rate is `recent_record` or `last_recorded`;
+- Fitbit Health Connect heart rate is synchronized phone history, not direct live data;
 - every observation retains measurement, Google-update when available, Personal State receipt, and storage times;
 - absence or delay is unknown availability, never a normal physiological result.
 
@@ -28,9 +34,13 @@ Location, nutrition, ECG, irregular-rhythm, profile, settings, and every write s
 
 ## Architecture
 
-`GoogleHealthAdapter` refreshes a short recent window through `users/me/dataTypes/{type}/dataPoints:reconcile` with `users/me/dataSourceFamilies/google-wearables`. This selects Google/Fitbit wearable hardware and excludes phone estimates and manual entries. A separate 14-day-window backfill command imports older history within Google's query limits.
+`GoogleHealthAdapter` refreshes a short recent window through `users/me/dataTypes/{type}/dataPoints:reconcile` with `users/me/dataSourceFamilies/google-wearables`. This selects Google/Fitbit wearable hardware and excludes phone estimates and manual entries. The default continuous collection window is 36 hours and is recorded as `bounded_recent_samples_for_timeline_context`.
+
+This is an explicit minimization decision: recent samples are permitted because the product needs source-labeled timeline context beside Libre and direct Galaxy heart rate. Raw Google API responses are not persisted, access tokens remain in memory, and Fitbit/Google Health observations are always synchronized records, never live data. A separate 14-day-window backfill command can import older history within Google's query limits when the operator intentionally runs it; imported records remain historical/synchronized context and cannot occupy a live/current card.
 
 OAuth client secret and refresh token are stored in the OS keychain. Access tokens remain in memory and are refreshed on demand. Raw API responses are not persisted. Normalized observations enter the existing `health_observations` table with adapter `google_health_fitbit`, schema `personal-state-google-health/v1`, stable deduplication, provenance, and source evidence.
+
+Health Connect phone ingest accepts Fitbit-origin records only when source-package evidence identifies the Fitbit mobile application. Those records use adapter `android_health_connect_fitbit` and public source label `Fitbit via Health Connect`. They are displayed in the Fitbit panel but remain distinct from Google Health records for provenance, filtering, currentness, and troubleshooting.
 
 ## Initial metrics
 
@@ -63,9 +73,24 @@ Casey must:
 - OAuth consent missing or revoked: adapter reports unavailable and retains stored history.
 - Partial scope consent: only affected data types fail.
 - Fitbit app has not synchronized: last recorded observations remain visible with their true age.
+- Fitbit app has written Health Connect records but no current heart-rate record: Fitbit source is synced, while Casey biofeedback remains stale until a current Fitbit heart sample appears.
+- Phone companion upload fails with HTTP 502: inspect the dashboard server traceback before retrying. A live production miss was caused by an additive SQLite table absent from an already-migrated database.
+- Direct watch live-heart polling can drain the Galaxy Watch. Set `WatchLivePollingEnabled = $false` to stop server-side live watch demand while preserving Fitbit/Health Connect sync.
 - Rate limit or transient Google error: collector retries on its next bounded cycle; no tight retry loop.
 - Unknown device metadata: attribution is not upgraded to Fitbit Air.
 - Duplicate or overlapping reconciled records: stable hashes and exact observation deduplication prevent duplicate history.
+
+## Direct Fitbit cloud evaluation
+
+The next Fitbit-only design path is not Bluetooth/device-direct polling. It is a separate cloud/API adapter, tentatively `fitbit_direct_cloud`, that reads Fitbit-owned endpoints directly when available. Legacy Fitbit Web API intraday endpoints may expose heart-rate detail, but Fitbit/Google's public direction is toward Google Health API replacement surfaces. Any direct adapter must therefore be treated as an evaluation lane until lifecycle, scopes, cadence, and response semantics are verified.
+
+Minimum design requirements:
+
+- Store Fitbit-direct OAuth material separately from Google Health material.
+- Preserve `fitbit_direct_cloud`, `fitbit_health_connect_phone`, and `google_health_fitbit` as separate source lanes.
+- Never silently fall back to Galaxy Watch for Casey biofeedback.
+- Use the same currentness gate as other Fitbit lanes: source-labeled Fitbit heart rate is usable for Casey only when the measured sample age is inside the configured window.
+- Verify on a real run with only the phone and Fitbit path carrying Casey's source requirement.
 
 ## Operations
 
@@ -78,4 +103,12 @@ Casey must:
 
 ## Validation
 
-Synthetic tests cover read-only OAuth, exact and non-exact device attribution, canonical heart-rate normalization, wearable-only reconciliation, partial failure behavior, collector persistence, MCP exposure, and dashboard metric history. Real-account validation must confirm paired device identity, granted scopes, data type response shapes, and advancing timestamps before deployment is called complete.
+Synthetic tests cover read-only OAuth, exact and non-exact device attribution, canonical heart-rate normalization, wearable-only reconciliation, Health Connect Fitbit attribution, partial failure behavior, collector persistence, MCP exposure, dashboard source panels, source-filtered metric history, and watch-polling disablement. Real-account validation must confirm paired device identity, granted scopes, data type response shapes, Health Connect Fitbit package evidence, and advancing timestamps before Casey biofeedback is called complete.
+
+2026-10-01 live validation status:
+
+- Phone companion pairing and Health Connect grants were intact.
+- Manual phone sync completed successfully after the server-side schema fix.
+- Fitbit source appeared as synced with stored metrics.
+- Fitbit biofeedback remained stale because the newest Fitbit heart-rate sample available to Personal State was outside the Casey currentness window.
+- Watch live polling was disabled server-side so the Galaxy Watch can charge and so Fitbit-only behavior can be evaluated without a watch fallback.

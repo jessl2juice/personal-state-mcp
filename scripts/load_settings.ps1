@@ -22,15 +22,19 @@ function Import-PersonalStateSettings {
         WatchEnabled = "PERSONAL_STATE_WATCH_ENABLED"
         WatchIngestHosts = "PERSONAL_STATE_WATCH_INGEST_HOSTS"
         WatchDeviceId = "PERSONAL_STATE_WATCH_DEVICE_ID"
+        WatchLivePollingEnabled = "PERSONAL_STATE_WATCH_LIVE_POLLING_ENABLED"
         GoogleHealthEnabled = "PERSONAL_STATE_GOOGLE_HEALTH_ENABLED"
         GoogleHealthSyncSeconds = "PERSONAL_STATE_GOOGLE_HEALTH_SYNC_SECONDS"
         GoogleHealthRecentHours = "PERSONAL_STATE_GOOGLE_HEALTH_RECENT_HOURS"
+        GoogleHealthRequestTimeoutSeconds = "PERSONAL_STATE_GOOGLE_HEALTH_REQUEST_TIMEOUT_SECONDS"
+        GoogleHealthCollectBudgetSeconds = "PERSONAL_STATE_GOOGLE_HEALTH_COLLECT_BUDGET_SECONDS"
     }
 
     foreach ($entry in $mapping.GetEnumerator()) {
         if (-not $settings.ContainsKey($entry.Key)) { continue }
         $value = $settings[$entry.Key]
-        if ($null -eq $value -or $value -eq "") { continue }
+        if ($null -eq $value) { continue }
+        if ($value -is [string] -and $value -eq "") { continue }
         if ($value -is [System.Array]) { $value = $value -join "," }
         if ($value -is [bool]) { $value = $value.ToString().ToLowerInvariant() }
         Set-Item -LiteralPath "Env:$($entry.Value)" -Value ([string]$value)

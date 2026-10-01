@@ -150,6 +150,32 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-lineca
 #threshold-chip.above { color: var(--glucose); }
 #context-title { overflow: hidden; max-width: 38ch; text-overflow: ellipsis; }
 
+.fitbit-air-panel, .galaxy-watch-panel { --source-panel-border: #b8dfe6; --source-panel-bg: #f4fbfc; --source-panel-accent: #006879; --source-panel-hover: #1594a8; --source-panel-soft: var(--cyan-soft); margin-top: 14px; border: 1px solid var(--source-panel-border); border-radius: 8px; padding: 14px; background: var(--source-panel-bg); box-shadow: var(--shadow-soft); }
+.galaxy-watch-panel { --source-panel-border: #efbdc8; --source-panel-bg: #fff6f7; --source-panel-accent: #a4193a; --source-panel-hover: #c8224e; --source-panel-soft: #ffe5eb; }
+.fitbit-air-heading, .galaxy-watch-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
+.fitbit-air-heading h3, .galaxy-watch-heading h3 { margin: 2px 0 0; font-family: "Google Sans", Roboto, Arial, sans-serif; font-size: 17px; font-weight: 650; }
+.source-panel-actions { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 8px; }
+.panel-action-button { display: inline-flex; min-height: 32px; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--source-panel-border); border-radius: 8px; padding: 0 10px; background: white; color: var(--source-panel-accent); font-size: 10px; font-weight: 800; white-space: nowrap; }
+.panel-action-button:hover { border-color: var(--source-panel-hover); background: var(--source-panel-soft); }
+.panel-action-button svg { width: 13px; height: 13px; }
+.panel-action-button:disabled { opacity: .55; cursor: wait; }
+.biofeedback-status { margin: -3px 0 10px; color: var(--muted); font-size: 10px; font-weight: 750; }
+.biofeedback-status.is-current { color: var(--glucose); }
+.biofeedback-status.is-blocked, .biofeedback-status.is-stale, .biofeedback-status.is-missing { color: var(--coral); }
+.fitbit-air-grid, .galaxy-watch-grid { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 9px; }
+.fitbit-air-card, .galaxy-watch-card { display: grid; min-width: 0; min-height: 128px; grid-template-rows: auto auto auto auto auto; border: 1px solid var(--source-panel-border); border-radius: 8px; padding: 12px; background: white; color: inherit; font: inherit; text-align: left; box-shadow: var(--shadow-soft); cursor: pointer; transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
+.fitbit-air-card:hover, .galaxy-watch-card:hover { border-color: var(--source-panel-hover); box-shadow: 0 8px 20px rgba(31,45,61,.09); transform: translateY(-1px); }
+.fitbit-air-card:focus-visible, .galaxy-watch-card:focus-visible { outline: 3px solid color-mix(in srgb, var(--source-panel-hover) 35%, transparent); outline-offset: 3px; }
+.fitbit-card-icon { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 8px; background: var(--source-panel-soft); color: var(--source-panel-accent); }
+.fitbit-card-icon svg { width: 16px; height: 16px; }
+.fitbit-card-label { margin-top: 8px; overflow: hidden; color: var(--muted); font-size: 9px; font-weight: 800; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.fitbit-card-value { display: flex; min-width: 0; align-items: baseline; gap: 5px; margin-top: 4px; color: var(--source-panel-accent); }
+.fitbit-card-value strong { min-width: 0; overflow-wrap: anywhere; font-family: "Google Sans", Roboto, Arial, sans-serif; font-size: 25px; font-weight: 650; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.fitbit-card-value small { color: var(--muted); font-size: 9px; font-weight: 800; }
+.fitbit-card-meta, .fitbit-card-time { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fitbit-card-meta { margin-top: 8px; color: var(--source-panel-accent); font-size: 8px; font-weight: 800; }
+.fitbit-card-time { margin-top: 3px; color: var(--muted); font-size: 8px; }
+
 .signal-board { margin-top: 40px; padding-top: 34px; border-top: 1px solid var(--line); scroll-margin-top: 64px; }
 .signal-board-heading { margin-bottom: 16px; }
 .signal-count { color: var(--muted); font-size: 11px; font-weight: 750; }
@@ -379,6 +405,7 @@ tbody tr:hover { background: var(--surface-container-low); }
   .topbar { padding-inline: 24px; }
   .workspace-nav { padding-inline: 24px; }
   .current-band { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .fitbit-air-grid, .galaxy-watch-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
   .signal-group { grid-template-columns: 150px minmax(0,1fr); }
   .overview-grid { grid-template-columns: 1fr; }
   .system-grid { grid-template-columns: 1fr; }
@@ -412,6 +439,10 @@ tbody tr:hover { background: var(--surface-container-low); }
   .reading-value > span:first-child { font-size: 36px; }
   .reading-value .unit { font-size: 10px; }
   .current-reading > p { font-size: 8px; }
+  .fitbit-air-heading, .galaxy-watch-heading { align-items: flex-start; flex-direction: column; gap: 9px; }
+  .source-panel-actions { width: 100%; justify-content: space-between; }
+  .fitbit-air-grid, .galaxy-watch-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .fitbit-air-card, .galaxy-watch-card { min-height: 132px; }
   .health-metric-grid { grid-template-columns: 1fr; }
   .signal-group { grid-template-columns: 1fr; gap: 9px; padding-block: 13px; }
   .signal-cards { grid-template-columns: repeat(2,minmax(0,1fr)); }
@@ -472,6 +503,8 @@ tbody tr:hover { background: var(--surface-container-low); }
 @media (max-width: 430px) {
   .sensor-alert { display: grid; grid-template-columns: auto minmax(0,1fr); }
   .sensor-alert-action { width: 100%; grid-column: 1 / -1; }
+  .fitbit-air-grid, .galaxy-watch-grid { grid-template-columns: 1fr; }
+  .fitbit-air-card, .galaxy-watch-card { min-height: 112px; }
   .signal-cards { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .health-metric-card { min-height: 146px; }
   .metric-value strong { font-size: 24px; }
@@ -492,6 +525,7 @@ tbody tr:hover { background: var(--surface-container-low); }
   .current-band { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
   .current-reading { min-height: 128px; padding: 13px; box-shadow: none; }
   .reading-value > span:first-child { font-size: 35px; }
+  .fitbit-air-panel, .galaxy-watch-panel { display: none !important; }
   .metric-grid { gap: 7px; margin: 8px 0; }
   .metric-card { min-height: 68px; padding: 9px 11px; box-shadow: none; }
   .metric-card strong { font-size: 20px; }

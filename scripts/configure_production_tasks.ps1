@@ -1,6 +1,8 @@
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
+$powerShellHost = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
+if (-not $powerShellHost) { $powerShellHost = "powershell.exe" }
 $taskNames = @(
     "Personal State MCP Collector",
     "Personal State MCP Dashboard",
@@ -23,7 +25,7 @@ foreach ($taskName in $taskNames) {
 $watchdogName = "Personal State MCP Production Watchdog"
 $watchdogScript = Join-Path $PSScriptRoot "production_watchdog.ps1"
 $watchdogAction = New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
+    -Execute $powerShellHost `
     -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdogScript`"" `
     -WorkingDirectory $projectRoot
 $watchdogTrigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"

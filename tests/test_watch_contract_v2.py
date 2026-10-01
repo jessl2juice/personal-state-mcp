@@ -23,6 +23,7 @@ IDENTIFIER_KEY = "synthetic-identifier-key-v2"
 NAMESPACE = "3dbf024a-0633-4c39-a356-e3791ee633af"
 SAMSUNG_ADAPTER = {"id": "android_samsung_health_data", "version": "1.1.0"}
 HEALTH_CONNECT_ADAPTER = {"id": "android_health_connect", "version": "2.0.0"}
+FITBIT_HEALTH_CONNECT_ADAPTER = {"id": "android_health_connect_fitbit", "version": "2.0.0"}
 WEAR_ADAPTER = {"id": "wear_health_services", "version": "0.2.0"}
 
 
@@ -264,6 +265,35 @@ def test_adapter_scoped_delete_keeps_equivalent_heart_rate_from_other_adapter() 
         assert remaining[0].adapter_id == "android_health_connect"
 
 
+def test_fitbit_health_connect_adapter_accepts_fitbit_origin_heart_rate() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        app = DashboardApp(config(Path(directory) / "state.db"))
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        start = now - timedelta(seconds=30)
+        observation = {
+            "adapter": FITBIT_HEALTH_CONNECT_ADAPTER,
+            "record_hash": "2" * 64,
+            "metric": "vitals.heart_rate",
+            "record_kind": "series",
+            "start_at": start.isoformat().replace("+00:00", "Z"),
+            "end_at": now.isoformat().replace("+00:00", "Z"),
+            "start_zone_offset": "-07:00",
+            "end_zone_offset": "-07:00",
+            "observed_by_companion_at": now.isoformat().replace("+00:00", "Z"),
+            "upstream_last_modified_at": now.isoformat().replace("+00:00", "Z"),
+            "source_package": "com.fitbit.FitbitMobile",
+            "recording_method": "automatic",
+            "attribution": {"state": "external_device", "evidence": "Health Connect metadata identifies Fitbit app origin com.fitbit.FitbitMobile."},
+            "payload": {"samples": [{"time": now.isoformat().replace("+00:00", "Z"), "value": 72, "unit": "bpm"}]},
+        }
+
+        status, result = ingest(app, batch(now, FITBIT_HEALTH_CONNECT_ADAPTER, [source_upsert(now, FITBIT_HEALTH_CONNECT_ADAPTER, [observation])]), now)
+
+        assert status == 200
+        assert result["counts"]["inserted"] == 1
+        assert app.store.watch_observations(metric="vitals.heart_rate")[0].adapter_id == "android_health_connect_fitbit"
+
+
 def test_sleep_family_manifest_replacement_removes_absent_members_atomically() -> None:
     with tempfile.TemporaryDirectory() as directory:
         app = DashboardApp(config(Path(directory) / "state.db"))
@@ -372,7 +402,12 @@ def test_v2_availability_is_stored_per_adapter() -> None:
 
 def test_public_source_tree_contains_no_proprietary_samsung_sdk_binary() -> None:
     root = Path(__file__).parents[1]
-    forbidden = [path for path in root.rglob("*.aar") if "build" not in {part.lower() for part in path.parts}]
+    generated_or_tooling_dirs = {"build", ".gradle", ".android-user-home", ".venv"}
+    forbidden = [
+        path
+        for path in root.rglob("*.aar")
+        if generated_or_tooling_dirs.isdisjoint({part.lower() for part in path.parts})
+    ]
     assert forbidden == []
     gradle = (root / "android" / "health-connect-companion" / "app" / "build.gradle.kts").read_text(encoding="utf-8")
     assert "SAMSUNG_HEALTH_DATA_SDK_AAR" in gradle

@@ -16,6 +16,8 @@ from .models import HealthObservation, iso_utc
 SCHEMA_VERSION = "personal-state-watch-batch/v1"
 SAMSUNG_HEALTH_PACKAGE = "com.sec.android.app.shealth"
 DIRECT_WEAR_PACKAGE = "ai.clinicianassist.personalstate"
+FITBIT_HEALTH_CONNECT_PACKAGES = frozenset({"com.fitbit.FitbitMobile", "com.fitbit.fitbitmobile"})
+FITBIT_HEALTH_CONNECT_ADAPTER_ID = "android_health_connect_fitbit"
 DIRECT_WEAR_LIVE_MAX_AGE_SECONDS = 10
 MAX_BODY_BYTES = 1024 * 1024
 MAX_CHANGES = 500
@@ -365,8 +367,10 @@ def _validate_observation(value: Any, now: datetime) -> None:
     if kind not in {"point", "interval", "series", "session", "composite", "aggregate"}:
         raise WatchContractError("invalid_record_kind", "The record kind is invalid.")
     source_package = value["source_package"]
-    allowed_source = source_package == SAMSUNG_HEALTH_PACKAGE or (
-        metric == "vitals.heart_rate" and source_package == DIRECT_WEAR_PACKAGE
+    allowed_source = (
+        source_package == SAMSUNG_HEALTH_PACKAGE
+        or (metric == "vitals.heart_rate" and source_package == DIRECT_WEAR_PACKAGE)
+        or (metric == "vitals.heart_rate" and source_package in FITBIT_HEALTH_CONNECT_PACKAGES)
     )
     if not allowed_source:
         raise WatchContractError("source_not_allowed", "This source is not accepted for the supplied metric.")
@@ -438,7 +442,10 @@ def validate_batch(value: dict[str, Any], now: datetime) -> None:
             _validate_observation(change["observation"], now)
         else:
             _exact_keys(change, {"operation", "record_id", "metric", "source_package", "upstream_last_modified_at"})
-            if change["metric"] not in OBSERVATION_METRICS or change["source_package"] != SAMSUNG_HEALTH_PACKAGE:
+            allowed_delete_source = change["source_package"] == SAMSUNG_HEALTH_PACKAGE or (
+                change["metric"] == "vitals.heart_rate" and change["source_package"] in FITBIT_HEALTH_CONNECT_PACKAGES
+            )
+            if change["metric"] not in OBSERVATION_METRICS or not allowed_delete_source:
                 raise WatchContractError("invalid_delete", "A delete operation has an invalid source or metric.")
             if not isinstance(change["record_id"], str) or not change["record_id"]:
                 raise WatchContractError("invalid_delete", "A delete operation needs a record identifier.")
@@ -492,7 +499,13 @@ def batch_to_observations(batch: dict[str, Any], identifier_key: str, now: datet
                 zone_offset=raw.get("zone_offset"),
                 start_zone_offset=raw.get("start_zone_offset"),
                 end_zone_offset=raw.get("end_zone_offset"),
-                adapter_id="wear_health_services" if raw["source_package"] == DIRECT_WEAR_PACKAGE else "android_health_connect",
+                adapter_id=(
+                    "wear_health_services"
+                    if raw["source_package"] == DIRECT_WEAR_PACKAGE
+                    else FITBIT_HEALTH_CONNECT_ADAPTER_ID
+                    if raw["source_package"] in FITBIT_HEALTH_CONNECT_PACKAGES
+                    else "android_health_connect"
+                ),
             )
         )
     return observations, deletions

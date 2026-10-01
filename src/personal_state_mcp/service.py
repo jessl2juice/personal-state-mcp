@@ -8,6 +8,7 @@ from .collector import Collector
 from .config import AppConfig
 from .freshness import FreshnessPolicy, classify_freshness, classify_threshold
 from .models import ErrorInfo, GlucoseReading, HealthObservation, ResponseEnvelope, SAFETY_NOTICE, WATCH_SAFETY_NOTICE, utc_now
+from .source_registry import WATCH_SOURCE_GROUPS, adapter_ids_for_watch_source, public_watch_source_filters
 from .storage import StateStore
 from .watch_contract import MAX_AGENT_HOURS, MAX_AGENT_PAGE, WatchContractError, decode_cursor, encode_cursor, observation_recency
 
@@ -69,7 +70,7 @@ class HealthService:
         decision = self.access_policy.check(self.store, self.config.host_id, now)
         self.store.record_access(self.config.host_id, tool, decision.decision, decision.reason, now)
         if decision.allowed:
-            if self.config.watch_enabled:
+            if self.config.watch_enabled and self.config.watch_live_polling_enabled:
                 self.store.request_live_heart(now, lease_seconds=20)
             return None
         return ErrorInfo(decision.reason, f"Health data access was {decision.decision}: {decision.reason}.", retryable=False)
@@ -276,9 +277,11 @@ class HealthService:
         if not include_clinical_findings:
             allowed -= CLINICAL_FINDING_METRICS
         latest = self.store.latest_watch_by_metric(allowed)
+        source_groups = self._watch_source_groups(allowed, now)
         return {
             "enabled": True,
             "latest": {metric: self._observation_dict(observation, now) for metric, observation in latest.items()},
+            "source_groups": source_groups,
             "last_companion_upload": self.store.latest_watch_sync(),
             "exposure_policy": {"allowed_metrics": sorted(allowed), "stress_enabled": "wellness.stress" in allowed},
             "limitations": [
@@ -288,6 +291,26 @@ class HealthService:
                 "Missing data is not a normal reading or proof of a synchronization failure.",
             ],
         }
+
+    def _watch_source_groups(self, allowed: set[str], now: datetime) -> dict[str, Any]:
+        groups: dict[str, Any] = {}
+        for key, spec in WATCH_SOURCE_GROUPS.items():
+            latest = self.store.latest_watch_by_metric(allowed, adapter_ids=spec["adapter_ids"])
+            observations = {metric: self._observation_dict(observation, now) for metric, observation in latest.items()}
+            statuses = [item["observation_recency"]["status"] for item in observations.values()]
+            groups[key] = {
+                "label": spec["label"],
+                "source_class": spec["source_class"],
+                "adapter_ids": list(spec["adapter_ids"]),
+                "latest": observations,
+                "metric_count": len(observations),
+                "recency": {
+                    "status": "mixed" if len(set(statuses)) > 1 else (statuses[0] if statuses else "unavailable"),
+                    "reason": "Recency is evaluated inside this source group.",
+                },
+                "limitations": list(spec["limitations"]),
+            }
+        return groups
 
     def watch(self) -> dict[str, Any]:
         tool = "health.watch"
@@ -310,6 +333,14 @@ class HealthService:
         latest = summary["latest"]
         statuses = [item["observation_recency"]["status"] for item in latest.values()]
         adapter_ids = sorted({item["provenance"]["adapter"] for item in latest.values()})
+        adapter_id_set = set(adapter_ids)
+        vendor = (
+            "mixed"
+            if len(adapter_ids) > 1
+            else "Fitbit"
+            if adapter_id_set <= {"google_health_fitbit", "android_health_connect_fitbit"} and adapter_ids
+            else "Samsung"
+        )
         return ResponseEnvelope(
             ok=bool(latest),
             tool=tool,
@@ -322,7 +353,7 @@ class HealthService:
             provenance={
                 "adapter": adapter_ids[0] if len(adapter_ids) == 1 else ("mixed" if adapter_ids else None),
                 "adapters": adapter_ids,
-                "vendor": "mixed" if len(adapter_ids) > 1 else ("Google Fitbit" if adapter_ids == ["google_health_fitbit"] else "Samsung"),
+                "vendor": vendor,
                 "source": "Persisted source provenance and per-metric recency are included on every observation.",
             },
             safety=WATCH_SAFETY_NOTICE,
@@ -335,6 +366,7 @@ class HealthService:
         hours: float = 24,
         limit: int = 200,
         cursor: str | None = None,
+        source: str | None = None,
     ) -> dict[str, Any]:
         tool = "health.watch_recent"
         access_error = self._check_access(tool)
@@ -363,6 +395,18 @@ class HealthService:
                 provenance=EMPTY_PROVENANCE,
                 safety=WATCH_SAFETY_NOTICE,
                 errors=[ErrorInfo("metric_not_authorized", "This metric is not authorized for agent access.")],
+            ).public_dict()
+        adapter_ids = adapter_ids_for_watch_source(source)
+        if source and adapter_ids is None:
+            return ResponseEnvelope(
+                ok=False,
+                tool=tool,
+                generated_at=now,
+                data={"exposure_policy": {"allowed_metrics": sorted(allowed), "source_filters": public_watch_source_filters()}},
+                freshness={"status": "unavailable", "reason": "The requested watch source is not recognized."},
+                provenance=EMPTY_PROVENANCE,
+                safety=WATCH_SAFETY_NOTICE,
+                errors=[ErrorInfo("invalid_watch_source", "This watch source filter is not supported.")],
             ).public_dict()
         try:
             hours = float(hours)
@@ -400,6 +444,7 @@ class HealthService:
                     "host_id": self.config.host_id,
                     "metric": metric,
                     "hours": hours,
+                    "source": source or None,
                     "policy": sorted(allowed),
                 }
                 if any(decoded.get(key) != value for key, value in expected.items()):
@@ -418,7 +463,13 @@ class HealthService:
                 ).public_dict()
 
         since = now - timedelta(hours=hours)
-        observations = self.store.watch_observations(metric=metric, since=since, limit=limit + 1, offset=offset)
+        observations = self.store.watch_observations(
+            metric=metric,
+            since=since,
+            adapter_ids=adapter_ids,
+            limit=limit + 1,
+            offset=offset,
+        )
         has_more = len(observations) > limit
         page = observations[:limit]
         next_cursor = None
@@ -428,6 +479,7 @@ class HealthService:
                     "host_id": self.config.host_id,
                     "metric": metric,
                     "hours": hours,
+                    "source": source or None,
                     "policy": sorted(allowed),
                     "offset": offset + limit,
                     "expires_at": (now + timedelta(minutes=15)).timestamp(),
@@ -440,11 +492,12 @@ class HealthService:
             generated_at=now,
             data={
                 "metric": metric,
+                "source": source or None,
                 "requested_hours": hours,
                 "observations": [self._observation_dict(item, now) for item in page],
                 "next_cursor": next_cursor,
                 "completeness": {"truncated": has_more, "backfill_limited": False, "interrupted": False, "reconciling": False},
-                "exposure_policy": {"allowed_metrics": sorted(allowed)},
+                "exposure_policy": {"allowed_metrics": sorted(allowed), "source_filters": public_watch_source_filters()},
             },
             freshness=observation_recency(page[0], now) if page else {"status": "unavailable", "reason": "No observations are stored."},
             provenance=(

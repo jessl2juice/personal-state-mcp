@@ -6,11 +6,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
+from personal_state_mcp.adapters import google_health as google_health_module
 from personal_state_mcp.adapters.google_health import (
     DATA_TYPES,
     GOOGLE_HEALTH_SCOPES,
+    GOOGLE_HEALTH_COLLECTION_POLICY,
     GoogleHealthAdapter,
     GoogleHealthClient,
+    GoogleHealthError,
     authorization_url,
     normalize_data_point,
     read_oauth_client,
@@ -70,6 +73,9 @@ def test_normalizes_fitbit_air_heart_rate_without_calling_it_live() -> None:
     assert observation.adapter_id == "google_health_fitbit"
     assert observation.attribution["state"] == "watch_confirmed"
     assert observation.recording_method == "actively_measured"
+    public = observation.public_dict()
+    assert public["provenance"]["vendor"] == "Fitbit"
+    assert public["provenance"]["source"] == "Fitbit Air via Google Health"
 
 
 def test_does_not_overclaim_unknown_google_wearable_as_fitbit_air() -> None:
@@ -85,6 +91,9 @@ def test_does_not_overclaim_unknown_google_wearable_as_fitbit_air() -> None:
     assert observation is not None
     assert observation.attribution["state"] == "external_device"
     assert "not asserted" in observation.attribution["evidence"]
+    public = observation.public_dict()
+    assert public["provenance"]["vendor"] == "Google Health"
+    assert public["provenance"]["source"] == "Google Health synchronized wearable history"
 
 
 def test_client_requests_reconciled_google_wearable_stream() -> None:
@@ -131,6 +140,62 @@ def test_adapter_returns_partial_when_one_data_type_fails() -> None:
         assert str(exc) == "unexpected test failure"
     else:
         raise AssertionError("Unexpected errors must not be silently converted into vendor failures.")
+
+
+def test_adapter_stops_when_google_health_budget_is_exceeded(monkeypatch) -> None:
+    class SlowFailingClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def data_points(self, spec, start, end):
+            self.calls += 1
+            raise GoogleHealthError(f"{spec.data_type} timed out")
+
+    ticks = iter([0.0, 20.0, 40.0])
+    monkeypatch.setattr(google_health_module.time, "monotonic", lambda: next(ticks, 40.0))
+    client = SlowFailingClient()
+    config = SimpleNamespace(
+        google_health_sync_interval_seconds=300,
+        google_health_recent_hours=36,
+        google_health_request_timeout_seconds=5,
+        google_health_collect_budget_seconds=30,
+    )
+
+    result = GoogleHealthAdapter(config, client=client, clock=lambda: NOW).collect_range(NOW.replace(hour=0), NOW)
+
+    assert client.calls == 1
+    assert result.status == "error"
+    assert result.metadata["collection_policy"] == GOOGLE_HEALTH_COLLECTION_POLICY
+    assert result.metadata["raw_api_persisted"] is False
+    assert [error.code for error in result.errors] == [
+        "google_health_data_type_failed",
+        "google_health_sync_budget_exceeded",
+    ]
+
+
+def test_collect_current_only_requests_priority_biofeedback_data_types() -> None:
+    class RecordingClient:
+        def __init__(self) -> None:
+            self.data_types: list[str] = []
+
+        def data_points(self, spec, start, end):
+            self.data_types.append(spec.data_type)
+            return []
+
+    client = RecordingClient()
+    config = SimpleNamespace(
+        google_health_sync_interval_seconds=300,
+        google_health_recent_hours=36,
+        google_health_request_timeout_seconds=5,
+        google_health_collect_budget_seconds=30,
+    )
+
+    result = GoogleHealthAdapter(config, client=client, clock=lambda: NOW).collect_current()
+
+    assert result.status == "ok"
+    assert client.data_types == ["heart-rate", "steps", "active-zone-minutes"]
+    assert result.metadata["collection_policy"] == "priority_current_fitbit_biofeedback"
+    assert result.metadata["requested_data_types"] == ["heart-rate", "steps", "active-zone-minutes"]
 
 
 def test_casey_context_contains_allowlisted_fitbit_context(tmp_path: Path) -> None:

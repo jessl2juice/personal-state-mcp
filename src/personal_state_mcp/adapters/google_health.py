@@ -24,6 +24,9 @@ GOOGLE_HEALTH_SCOPES = (
     "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
     "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
 )
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 12
+DEFAULT_COLLECT_BUDGET_SECONDS = 35
+GOOGLE_HEALTH_COLLECTION_POLICY = "bounded_recent_samples_for_timeline_context"
 
 
 class GoogleHealthError(RuntimeError):
@@ -63,10 +66,17 @@ DATA_TYPES = (
 )
 
 
-def _default_json_request(method: str, url: str, headers: dict[str, str], body: bytes | None) -> dict[str, Any]:
+def _default_json_request(
+    method: str,
+    url: str,
+    headers: dict[str, str],
+    body: bytes | None,
+    *,
+    timeout_seconds: int = DEFAULT_REQUEST_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
     request = Request(url, data=body, headers=headers, method=method)
     try:
-        with urlopen(request, timeout=45) as response:  # noqa: S310 - fixed HTTPS Google endpoints only
+        with urlopen(request, timeout=timeout_seconds) as response:  # noqa: S310 - fixed HTTPS Google endpoints only
             raw = response.read()
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:1000]
@@ -158,19 +168,26 @@ class GoogleHealthClient:
         self,
         credentials: dict[str, str],
         *,
-        request_json: Callable[[str, str, dict[str, str], bytes | None], dict[str, Any]] = _default_json_request,
+        request_json: Callable[[str, str, dict[str, str], bytes | None], dict[str, Any]] | None = None,
+        timeout_seconds: int = DEFAULT_REQUEST_TIMEOUT_SECONDS,
     ):
         self.credentials = credentials
-        self.request_json = request_json
+        self.request_json = request_json or _default_json_request
+        self.timeout_seconds = timeout_seconds
         self._access_token: str | None = None
         self._access_expires_at = 0.0
 
     @classmethod
-    def from_keyring(cls) -> "GoogleHealthClient":
+    def from_keyring(cls, *, timeout_seconds: int = DEFAULT_REQUEST_TIMEOUT_SECONDS) -> "GoogleHealthClient":
         credentials = get_google_health_credentials()
         if credentials is None:
             raise GoogleHealthError("Google Health is not connected.")
-        return cls(credentials)
+        return cls(credentials, timeout_seconds=timeout_seconds)
+
+    def _request_json(self, method: str, url: str, headers: dict[str, str], body: bytes | None) -> dict[str, Any]:
+        if self.request_json is _default_json_request:
+            return _default_json_request(method, url, headers, body, timeout_seconds=self.timeout_seconds)
+        return self.request_json(method, url, headers, body)
 
     def _token(self) -> str:
         if self._access_token and time.time() < self._access_expires_at - 60:
@@ -183,7 +200,7 @@ class GoogleHealthClient:
                 "grant_type": "refresh_token",
             }
         ).encode("ascii")
-        payload = self.request_json("POST", TOKEN_URL, {"Content-Type": "application/x-www-form-urlencoded"}, body)
+        payload = self._request_json("POST", TOKEN_URL, {"Content-Type": "application/x-www-form-urlencoded"}, body)
         token = payload.get("access_token")
         if not isinstance(token, str) or not token:
             raise GoogleHealthError("Google Health token refresh did not return an access token.")
@@ -193,7 +210,7 @@ class GoogleHealthClient:
 
     def _get(self, path: str, params: dict[str, str]) -> dict[str, Any]:
         url = f"{API_ROOT}/{path.lstrip('/')}?{urlencode(params)}"
-        return self.request_json("GET", url, {"Authorization": f"Bearer {self._token()}", "Accept": "application/json"}, None)
+        return self._request_json("GET", url, {"Authorization": f"Bearer {self._token()}", "Accept": "application/json"}, None)
 
     def paired_devices(self) -> list[dict[str, Any]]:
         payload = self._get("users/me/pairedDevices", {"pageSize": "100"})
@@ -383,14 +400,33 @@ class GoogleHealthAdapter:
     def supports(self, metric: str) -> bool:
         return any(spec.metric == metric for spec in DATA_TYPES)
 
-    def collect_range(self, start: datetime, end: datetime) -> CollectionResult:
+    def collect_range(
+        self,
+        start: datetime,
+        end: datetime,
+        *,
+        data_types: Iterable[str] | None = None,
+        collection_policy: str = GOOGLE_HEALTH_COLLECTION_POLICY,
+    ) -> CollectionResult:
         started = self.clock()
+        deadline = time.monotonic() + self._collect_budget_seconds()
         observations: list[HealthObservation] = []
         errors: list[ErrorInfo] = []
         counts: dict[str, int] = {}
+        requested = set(data_types or ())
+        specs = tuple(spec for spec in DATA_TYPES if not requested or spec.data_type in requested)
         try:
-            client = self.client or GoogleHealthClient.from_keyring()
-            for spec in DATA_TYPES:
+            client = self.client or GoogleHealthClient.from_keyring(timeout_seconds=self._request_timeout_seconds())
+            for spec in specs:
+                if time.monotonic() >= deadline:
+                    errors.append(
+                        ErrorInfo(
+                            "google_health_sync_budget_exceeded",
+                            f"Google Health sync exceeded {self._collect_budget_seconds()} seconds; remaining data types were deferred.",
+                            retryable=True,
+                        )
+                    )
+                    break
                 try:
                     points = client.data_points(spec, start, end)
                     normalized = [item for point in points if (item := normalize_data_point(spec, point, started)) is not None]
@@ -408,7 +444,25 @@ class GoogleHealthAdapter:
             observations=observations,
             status="ok" if not errors else ("partial" if observations else "error"),
             errors=errors,
-            metadata={"window_start": iso_utc(start), "window_end": iso_utc(end), "counts": counts, "source_family": GOOGLE_WEARABLES},
+            metadata={
+                "window_start": iso_utc(start),
+                "window_end": iso_utc(end),
+                "counts": counts,
+                "source_family": GOOGLE_WEARABLES,
+                "collection_policy": collection_policy,
+                "requested_data_types": [spec.data_type for spec in specs],
+                "raw_api_persisted": False,
+            },
+        )
+
+    def collect_current(self, window_minutes: int = 180) -> CollectionResult:
+        end = self.clock()
+        start = end - timedelta(minutes=max(5, min(int(window_minutes), 360)))
+        return self.collect_range(
+            start,
+            end,
+            data_types=("heart-rate", "steps", "active-zone-minutes"),
+            collection_policy="priority_current_fitbit_biofeedback",
         )
 
     def collect(self) -> CollectionResult:
@@ -421,3 +475,11 @@ class GoogleHealthAdapter:
         end = self.clock()
         start = end - timedelta(hours=max(1, int(self.config.google_health_recent_hours)))
         return self.collect_range(start, end)
+
+    def _request_timeout_seconds(self) -> int:
+        return max(3, int(getattr(self.config, "google_health_request_timeout_seconds", DEFAULT_REQUEST_TIMEOUT_SECONDS)))
+
+    def _collect_budget_seconds(self) -> int:
+        timeout = self._request_timeout_seconds()
+        configured = int(getattr(self.config, "google_health_collect_budget_seconds", DEFAULT_COLLECT_BUDGET_SECONDS))
+        return max(timeout, configured)

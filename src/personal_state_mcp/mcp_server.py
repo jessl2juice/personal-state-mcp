@@ -75,9 +75,10 @@ if MCPServer is not None:
         hours: float = 24,
         limit: int = 200,
         cursor: str | None = None,
+        source: str | None = None,
     ) -> dict:
         """Return paged history for one explicitly agent-authorized watch metric."""
-        return _service().watch_recent(metric=metric, hours=hours, limit=limit, cursor=cursor)
+        return _service().watch_recent(metric=metric, hours=hours, limit=limit, cursor=cursor, source=source)
 else:
     mcp = None
 

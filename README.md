@@ -14,6 +14,7 @@ The primary use case is an authorized agent noticing that the user seems unusual
 - **Security reviewer:** read [Architecture, Security, and Privacy](docs/03-ARCHITECTURE-SECURITY-PRIVACY.md).
 
 The complete set is indexed in [Personal State Documentation](docs/00-DOCUMENTATION-INDEX.md).
+Start with [Top-Level Design and Audit](docs/top-level-design-and-audit.md) when reviewing whether the implementation still matches the source, freshness, and safety contracts.
 
 ## System At A Glance
 
@@ -208,10 +209,10 @@ The Android project is [android/health-connect-companion](android/health-connect
 Build the public debug variants:
 
 ```powershell
-cd .\android\health-connect-companion
-.\gradlew.bat --no-daemon :app:testDebugUnitTest :app:lintDebug :wear:lintDebug :app:assembleDebug :wear:assembleDebug
-cd ..\..
+.\scripts\verify_android_debug.ps1
 ```
+
+The script keeps Gradle and Android user-home files inside the project checkout and uses the SDK `aapt2.exe` from `local.properties` when needed. It verifies app unit tests, app debug lint, Wear debug lint, and both debug APK assemblies.
 
 Outputs:
 
@@ -452,6 +453,7 @@ Before calling a new machine ready:
 
 ## Design And Review Record
 
+- [Top-level design and audit](docs/top-level-design-and-audit.md)
 - [Detailed design](docs/design.md)
 - [Galaxy Watch5 Pro design](docs/watch5-pro-design-addendum.md)
 - [Google Health / Fitbit Air design](docs/google-health-fitbit-air-design.md)

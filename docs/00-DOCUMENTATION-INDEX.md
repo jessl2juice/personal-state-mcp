@@ -2,7 +2,7 @@
 
 Document version: 1.0  
 Product status: Production pilot  
-Last verified: 2026-09-29
+Last verified: 2026-10-01
 Document owner: Personal State project
 
 ## Purpose
@@ -22,15 +22,16 @@ The system is designed to help the user and the user's clinicians review recorde
 
 ## Read this first
 
-1. [User and Clinician Guide](01-USER-AND-CLINICIAN-GUIDE.md) explains what the dashboard shows, how to interpret timestamps and gaps, and how different clinicians can use it.
-2. [Installation and Operations Guide](02-INSTALLATION-AND-OPERATIONS.md) covers setup, daily operation, backup, export, service health, and planned maintenance.
-3. [Architecture, Security, and Privacy](03-ARCHITECTURE-SECURITY-PRIVACY.md) documents the data flow, trust boundaries, controls, threat model, and residual risks.
-4. [API and Data Reference](04-API-AND-DATA-REFERENCE.md) defines the MCP tools, HTTP routes, normalized records, units, freshness states, and threshold semantics.
-5. [Troubleshooting Runbook](05-TROUBLESHOOTING-RUNBOOK.md) provides symptom-first recovery procedures, including loss of live heart rate.
-6. [Validation, Release, and Governance](06-VALIDATION-RELEASE-AND-GOVERNANCE.md) records the review gates, test plan, release checklist, change rules, and known limitations.
-7. [Distribution and Installer](07-DISTRIBUTION-AND-INSTALLER.md) defines release packaging, signing, update, and verification requirements.
-8. [Installer Quick Start](INSTALLER-QUICK-START.md) is the concise setup guide for a new user.
-9. [Historical Backfill](08-HISTORICAL-BACKFILL.md) covers LibreView, Google Fit Takeout, and Samsung Health archive imports with validation and deduplication requirements.
+1. [Top-Level Design and Audit](top-level-design-and-audit.md) starts with user stories, reconciles Notion/source-code reality, and names current architecture risks and module boundaries.
+2. [User and Clinician Guide](01-USER-AND-CLINICIAN-GUIDE.md) explains what the dashboard shows, how to interpret timestamps and gaps, and how different clinicians can use it.
+3. [Installation and Operations Guide](02-INSTALLATION-AND-OPERATIONS.md) covers setup, daily operation, backup, export, service health, and planned maintenance.
+4. [Architecture, Security, and Privacy](03-ARCHITECTURE-SECURITY-PRIVACY.md) documents the data flow, trust boundaries, controls, threat model, and residual risks.
+5. [API and Data Reference](04-API-AND-DATA-REFERENCE.md) defines the MCP tools, HTTP routes, normalized records, units, freshness states, and threshold semantics.
+6. [Troubleshooting Runbook](05-TROUBLESHOOTING-RUNBOOK.md) provides symptom-first recovery procedures, including loss of live heart rate.
+7. [Validation, Release, and Governance](06-VALIDATION-RELEASE-AND-GOVERNANCE.md) records the review gates, test plan, release checklist, change rules, and known limitations.
+8. [Distribution and Installer](07-DISTRIBUTION-AND-INSTALLER.md) defines release packaging, signing, update, and verification requirements.
+9. [Installer Quick Start](INSTALLER-QUICK-START.md) is the concise setup guide for a new user.
+10. [Historical Backfill](08-HISTORICAL-BACKFILL.md) covers LibreView, Google Fit Takeout, and Samsung Health archive imports with validation and deduplication requirements.
 
 The original detailed design, independent Fable review, resolution logs, and normative watch-ingest schema remain part of the engineering record:
 
@@ -54,12 +55,12 @@ The original detailed design, independent Fable review, resolution logs, and nor
 | Reader | Start with | Then read |
 | --- | --- | --- |
 | Person whose data is shown | User and Clinician Guide | Troubleshooting Runbook |
-| Primary care clinician | User and Clinician Guide | API and Data Reference, sections on time and provenance |
+| Primary care clinician | User and Clinician Guide | Top-Level Design and Audit, API and Data Reference |
 | Endocrinologist | User and Clinician Guide | API and Data Reference, glucose and threshold sections |
 | Cardiologist | User and Clinician Guide | API and Data Reference, heart-rate and gap sections |
 | Installer or operator | Installer Quick Start | Installation and Operations, Distribution and Installer |
-| Security or privacy reviewer | Architecture, Security, and Privacy | Validation, Release, and Governance |
-| Agent or integration developer | API and Data Reference | Architecture, Security, and Privacy |
+| Security or privacy reviewer | Top-Level Design and Audit | Architecture, Security, and Privacy, Validation, Release, and Governance |
+| Agent or integration developer | Top-Level Design and Audit | API and Data Reference, Architecture, Security, and Privacy |
 
 ## Claims and boundaries
 

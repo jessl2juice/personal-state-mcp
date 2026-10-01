@@ -28,6 +28,7 @@ local.properties
 
 # Android build products and local tool state
 android/**/.gradle/
+android/**/.android-user-home/
 android/**/.kotlin/
 android/**/build/
 android/**/local.properties

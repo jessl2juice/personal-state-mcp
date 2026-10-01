@@ -124,6 +124,35 @@
             <a id="heart-repair-action" class="heart-repair-action" href="/downloads/personal-state-companion.apk" download hidden><svg><use href="#icon-download"/></svg>Install sync update</a>
           </div>
         </div>
+        <section id="fitbit-air-panel" class="fitbit-air-panel" aria-labelledby="fitbit-air-title">
+          <div class="fitbit-air-heading">
+            <div>
+              <p class="section-kicker">Fitbit Air</p>
+              <h3 id="fitbit-air-title">Google Health synchronized data</h3>
+            </div>
+            <div class="source-panel-actions">
+              <span id="fitbit-air-status" class="state-chip">Waiting for sync</span>
+              <button id="fitbit-refresh-button" type="button" class="panel-action-button" title="Push Fitbit currentness"><svg><use href="#icon-refresh"/></svg><span>Push currentness</span></button>
+            </div>
+          </div>
+          <p id="fitbit-biofeedback-status" class="biofeedback-status">Casey biofeedback waiting for Fitbit currentness.</p>
+          <div id="fitbit-air-grid" class="fitbit-air-grid" aria-label="Latest Fitbit Air measurements">
+            <div class="available-empty">Waiting for Fitbit Air records.</div>
+          </div>
+        </section>
+
+        <section id="galaxy-watch-panel" class="galaxy-watch-panel" aria-labelledby="galaxy-watch-title">
+          <div class="galaxy-watch-heading">
+            <div>
+              <p class="section-kicker">Galaxy Watch</p>
+              <h3 id="galaxy-watch-title">Direct + Samsung Health data</h3>
+            </div>
+            <span id="galaxy-watch-status" class="state-chip">Waiting for watch</span>
+          </div>
+          <div id="galaxy-watch-grid" class="galaxy-watch-grid" aria-label="Latest Galaxy Watch measurements">
+            <div class="available-empty">Waiting for Galaxy Watch records.</div>
+          </div>
+        </section>
 
         <section id="signals" class="signal-board" aria-labelledby="signal-board-title">
           <div class="signal-board-heading">

@@ -8,6 +8,8 @@ from uuid import UUID
 from .models import HealthObservation
 from .watch_contract import (
     AVAILABILITY_METRICS,
+    FITBIT_HEALTH_CONNECT_ADAPTER_ID,
+    FITBIT_HEALTH_CONNECT_PACKAGES,
     DIRECT_WEAR_PACKAGE,
     MAX_CHANGES,
     MAX_SERIES_ITEMS,
@@ -27,6 +29,7 @@ SCHEMA_VERSION_V2 = "personal-state-watch-batch/v2"
 SAMSUNG_ADAPTER_ID = "android_samsung_health_data"
 ALLOWED_ADAPTER_IDS = {
     "android_health_connect",
+    FITBIT_HEALTH_CONNECT_ADAPTER_ID,
     SAMSUNG_ADAPTER_ID,
     "wear_health_services",
     "synthetic_test",
@@ -237,6 +240,9 @@ def _validate_observation(value: Any, adapter: dict[str, str], now: datetime) ->
     elif adapter["id"] == "android_health_connect":
         if metric in SAMSUNG_OBSERVATION_METRICS or value["source_package"] != SAMSUNG_HEALTH_PACKAGE:
             raise WatchContractError("adapter_metric_mismatch", "The Health Connect adapter does not own this metric or source.")
+    elif adapter["id"] == FITBIT_HEALTH_CONNECT_ADAPTER_ID:
+        if metric in SAMSUNG_OBSERVATION_METRICS or value["source_package"] not in FITBIT_HEALTH_CONNECT_PACKAGES:
+            raise WatchContractError("adapter_metric_mismatch", "The Fitbit Health Connect adapter does not own this metric or source.")
     elif adapter["id"] != "synthetic_test" and metric in SAMSUNG_OBSERVATION_METRICS:
         raise WatchContractError("adapter_metric_mismatch", "This metric requires the Samsung Health Data adapter.")
     if value["recording_method"] not in {"active", "automatic", "manual", "unknown"}:

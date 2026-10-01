@@ -10,7 +10,14 @@ from personal_state_mcp.config import AppConfig
 from personal_state_mcp.dashboard import DashboardApp
 from personal_state_mcp.models import HealthObservation
 from personal_state_mcp.service import HealthService
-from personal_state_mcp.watch_contract import DIRECT_WEAR_PACKAGE, WatchContractError, parse_json_strict, upload_signature, validate_batch
+from personal_state_mcp.watch_contract import (
+    DIRECT_WEAR_PACKAGE,
+    FITBIT_HEALTH_CONNECT_ADAPTER_ID,
+    WatchContractError,
+    parse_json_strict,
+    upload_signature,
+    validate_batch,
+)
 
 
 DEVICE_ID = "phone-test-001"
@@ -176,6 +183,46 @@ def test_mcp_access_creates_a_signed_short_live_heart_lease() -> None:
         assert denied_status == 401
 
 
+def test_watch_live_polling_can_be_disabled_without_blocking_health_connect_sync() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        cfg = config(Path(directory) / "state.db")
+        cfg = AppConfig(**{**cfg.__dict__, "watch_live_polling_enabled": False})
+        app = DashboardApp(cfg)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        service = HealthService(config=cfg, store=app.store, clock=lambda: now)
+
+        before = app.store.live_heart_demand()
+        service.watch()
+        demand = app.store.live_heart_demand()
+
+        assert demand["revision"] == before["revision"]
+        status, response = app.poll_live_heart_demand(
+            signed_demand_headers(now),
+            after_revision=int(before["revision"]),
+        )
+
+        assert status == 200
+        assert response["live_requested"] is False
+        assert response["lease_seconds"] == 0
+        assert response["disabled"] is True
+
+        value = heart_observation(now, record_id="fitbit-with-watch-off", bpm=73, attribution="external_device")
+        value["source_package"] = "com.fitbit.FitbitMobile"
+        value["attribution"] = {
+            "state": "external_device",
+            "evidence": "Health Connect metadata identifies Fitbit app origin com.fitbit.FitbitMobile.",
+        }
+        payload = batch(now, [{"operation": "upsert", "observation": value}])
+        body, headers = signed_request(payload, now)
+
+        ingest_status, result = app.ingest_watch(body, headers)
+
+        assert ingest_status == 200
+        assert result["counts"]["inserted"] == 1
+        latest = app.store.latest_watch_by_metric(adapter_ids=(FITBIT_HEALTH_CONNECT_ADAPTER_ID,))
+        assert latest["vitals.heart_rate"].adapter_id == FITBIT_HEALTH_CONNECT_ADAPTER_ID
+
+
 def test_signed_ingest_is_idempotent_and_stress_has_no_observation() -> None:
     with tempfile.TemporaryDirectory() as directory:
         app = DashboardApp(config(Path(directory) / "state.db"))
@@ -210,6 +257,66 @@ def test_direct_wear_heart_rate_is_accepted_with_explicit_provenance() -> None:
         latest = app.store.latest_watch_by_metric()["vitals.heart_rate"]
         assert latest.source_package == DIRECT_WEAR_PACKAGE
         assert latest.attribution["state"] == "watch_confirmed"
+
+
+def test_fitbit_health_connect_heart_rate_is_accepted_as_fitbit_source() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        cfg = config(Path(directory) / "state.db")
+        app = DashboardApp(cfg)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        value = heart_observation(now, record_id="fitbit-phone-heart", bpm=73, attribution="external_device")
+        value["source_package"] = "com.fitbit.FitbitMobile"
+        value["attribution"] = {
+            "state": "external_device",
+            "evidence": "Health Connect metadata identifies Fitbit app origin com.fitbit.FitbitMobile.",
+        }
+        payload = batch(now, [{"operation": "upsert", "observation": value}])
+        body, headers = signed_request(payload, now)
+
+        status, result = app.ingest_watch(body, headers)
+
+        assert status == 200
+        assert result["counts"]["inserted"] == 1
+        latest = app.store.latest_watch_by_metric(adapter_ids=(FITBIT_HEALTH_CONNECT_ADAPTER_ID,))["vitals.heart_rate"]
+        assert latest.adapter_id == FITBIT_HEALTH_CONNECT_ADAPTER_ID
+        assert latest.public_dict()["provenance"]["source"] == "Fitbit via Health Connect"
+
+        dashboard = app.watch_dashboard(now + timedelta(seconds=20), None)
+        assert dashboard["latest_by_source"]["fitbit"]["vitals.heart_rate"]["provenance"]["adapter"] == FITBIT_HEALTH_CONNECT_ADAPTER_ID
+        assert dashboard["sources"]["fitbit"]["status"] == "synced"
+        assert dashboard["fitbit_biofeedback"]["usable"] is True
+        assert dashboard["fitbit_biofeedback"]["reason"] == "fitbit_heart_rate_current"
+
+
+def test_live_heart_rate_limit_does_not_block_fitbit_health_connect_sync() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        cfg = config(Path(directory) / "state.db")
+        app = DashboardApp(cfg)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+
+        for index in range(45):
+            payload = batch(
+                now,
+                [{"operation": "upsert", "observation": direct_heart_observation(now + timedelta(milliseconds=index), bpm=76)}],
+                batch_id=str(uuid4()),
+            )
+            body, headers = signed_request(payload, now, nonce=f"live-{index}-{uuid4()}")
+            assert app.ingest_watch(body, headers)[0] == 200
+
+        value = heart_observation(now, record_id="fitbit-after-live-flood", bpm=73, attribution="external_device")
+        value["source_package"] = "com.fitbit.FitbitMobile"
+        value["attribution"] = {
+            "state": "external_device",
+            "evidence": "Health Connect metadata identifies Fitbit app origin com.fitbit.FitbitMobile.",
+        }
+        payload = batch(now, [{"operation": "upsert", "observation": value}])
+        body, headers = signed_request(payload, now)
+
+        status, result = app.ingest_watch(body, headers)
+
+        assert status == 200
+        assert result["counts"]["inserted"] == 1
+        assert app.store.latest_watch_by_metric(adapter_ids=(FITBIT_HEALTH_CONNECT_ADAPTER_ID,))["vitals.heart_rate"].adapter_id == FITBIT_HEALTH_CONNECT_ADAPTER_ID
 
 
 def test_dashboard_keeps_live_galaxy_heart_separate_from_newer_fitbit_heart() -> None:
@@ -252,6 +359,31 @@ def test_dashboard_keeps_live_galaxy_heart_separate_from_newer_fitbit_heart() ->
         assert dashboard["latest_by_source"]["fitbit"]["vitals.heart_rate"]["payload"]["samples"][-1]["value"] == 68
         assert dashboard["sources"]["galaxy"]["status"] == "live"
         assert dashboard["sources"]["fitbit"]["status"] == "synced"
+
+        service = HealthService(config=config(Path(directory) / "state.db"), store=app.store, clock=lambda: now + timedelta(seconds=2))
+        watch = service.watch()
+        assert watch["data"]["latest"]["vitals.heart_rate"]["provenance"]["adapter"] == "google_health_fitbit"
+        assert watch["data"]["source_groups"]["galaxy_direct_live"]["latest"]["vitals.heart_rate"]["payload"]["samples"][-1]["value"] == 76
+        assert watch["data"]["source_groups"]["google_health_sync"]["latest"]["vitals.heart_rate"]["payload"]["samples"][-1]["value"] == 68
+        assert watch["data"]["source_groups"]["google_health_sync"]["source_class"] == "synchronized_wearable_history"
+
+        galaxy_history = app.watch_metric_history("vitals.heart_rate", "24h", source="galaxy_direct_live")
+        fitbit_history = app.watch_metric_history("vitals.heart_rate", "24h", source="google_health_sync")
+        assert galaxy_history["source"] == "galaxy_direct_live"
+        assert fitbit_history["source"] == "google_health_sync"
+        assert [point["value"] for point in galaxy_history["points"]] == [76]
+        assert [point["value"] for point in fitbit_history["points"]] == [68]
+
+        galaxy_recent = service.watch_recent("vitals.heart_rate", source="galaxy_direct_live")
+        fitbit_recent = service.watch_recent("vitals.heart_rate", source="google_health_sync")
+        assert galaxy_recent["data"]["source"] == "galaxy_direct_live"
+        assert fitbit_recent["data"]["source"] == "google_health_sync"
+        assert galaxy_recent["data"]["observations"][0]["payload"]["samples"][-1]["value"] == 76
+        assert fitbit_recent["data"]["observations"][0]["payload"]["samples"][-1]["value"] == 68
+
+        invalid_source = service.watch_recent("vitals.heart_rate", source="not_a_source")
+        assert not invalid_source["ok"]
+        assert invalid_source["errors"][0]["code"] == "invalid_watch_source"
 
 
 def test_upstream_delete_removes_observation_and_keeps_tombstone_behavior() -> None:
@@ -326,6 +458,7 @@ def test_mcp_exposure_policy_hides_collected_body_data() -> None:
         denied = service.watch_recent("body.weight")
         assert allowed["ok"]
         assert set(allowed["data"]["latest"]) == {"vitals.heart_rate"}
+        assert set(allowed["data"]["source_groups"]["health_connect_history"]["latest"]) == {"vitals.heart_rate"}
         assert not denied["ok"]
         assert denied["errors"][0]["code"] == "metric_not_authorized"
 

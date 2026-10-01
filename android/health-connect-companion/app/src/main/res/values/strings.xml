@@ -3,7 +3,8 @@
     <string name="title">Watch connection</string>
     <string name="subtitle">Galaxy Watch5 Pro through Samsung Health</string>
     <string name="pair">Choose pairing file</string>
-    <string name="permissions">Choose health data</string>
+    <string name="permissions">Choose core health data</string>
+    <string name="optional_permissions">Choose optional expanded data</string>
     <string name="history_permission">Allow older history</string>
     <string name="background_permission">Allow background sync</string>
     <string name="samsung_permission">Allow Samsung Health data</string>

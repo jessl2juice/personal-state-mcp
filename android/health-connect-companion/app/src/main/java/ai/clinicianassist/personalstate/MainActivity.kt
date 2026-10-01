@@ -64,7 +64,10 @@ class MainActivity : AppCompatActivity() {
             pairingFile.launch(arrayOf("application/json", "text/json", "text/plain"))
         }
         binding.permissionButton.setOnClickListener {
-            permissionRequest.launch(HealthConnectSync.READ_PERMISSIONS)
+            permissionRequest.launch(HealthConnectSync.CORE_READ_PERMISSIONS)
+        }
+        binding.optionalPermissionButton.setOnClickListener {
+            permissionRequest.launch(HealthConnectSync.OPTIONAL_READ_PERMISSIONS)
         }
         binding.historyPermissionButton.setOnClickListener {
             if (featureAvailable(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_HISTORY)) {
@@ -148,19 +151,23 @@ class MainActivity : AppCompatActivity() {
         val ready = healthConnectReady()
         val pairing = store.pairing()
         val granted = if (ready) healthClient.permissionController.getGrantedPermissions() else emptySet()
-        val required = HealthConnectSync.READ_PERMISSIONS.size
-        val grantedCount = HealthConnectSync.READ_PERMISSIONS.count { it in granted }
+        val coreRequired = HealthConnectSync.CORE_READ_PERMISSIONS.size
+        val coreGrantedCount = HealthConnectSync.CORE_READ_PERMISSIONS.count { it in granted }
+        val optionalRequired = HealthConnectSync.OPTIONAL_READ_PERMISSIONS.size
+        val optionalGrantedCount = HealthConnectSync.OPTIONAL_READ_PERMISSIONS.count { it in granted }
+        val grantedCount = coreGrantedCount + optionalGrantedCount
         binding.connectionStatus.text = when {
             !ready -> "Health Connect is unavailable or needs an update."
             pairing == null -> getString(R.string.not_paired)
-            grantedCount == 0 -> "Paired. Choose the health data this companion may read."
-            grantedCount < required -> "Paired. $grantedCount of $required health categories are allowed."
+            coreGrantedCount == 0 -> "Paired. Choose the core health data this companion may read."
+            coreGrantedCount < coreRequired -> "Paired. $coreGrantedCount of $coreRequired core health categories are allowed."
             else -> "Paired and ready to sync."
         }
         val history = HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY in granted
         val background = HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in granted
         binding.permissionSummary.text = buildString {
-            append("Health categories: $grantedCount of $required\n")
+            append("Core health categories: $coreGrantedCount of $coreRequired\n")
+            append("Optional expanded categories: $optionalGrantedCount of $optionalRequired\n")
             append("Older history: ${if (history) "allowed" else "not allowed"}\n")
             append("Background sync: ${if (background) "allowed" else "not allowed"}")
         }

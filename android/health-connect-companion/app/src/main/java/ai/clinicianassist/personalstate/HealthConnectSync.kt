@@ -518,16 +518,19 @@ class HealthConnectSync(
     }
 
     private fun attribution(metadata: Metadata): JSONObject {
+        val sourcePackage = metadata.dataOrigin.packageName
         val model = metadata.device?.model.orEmpty()
         val type = metadata.device?.type?.toString()
         val method = recordingMethod(metadata.recordingMethod)
         val confirmed = model.contains("Watch5", ignoreCase = true) || model.startsWith("SM-R9", ignoreCase = true)
         val state = when {
+            sourcePackage in FITBIT_HEALTH_CONNECT_PACKAGES -> "external_device"
             confirmed -> "watch_confirmed"
             method == "manual" -> "manual"
             else -> "samsung_health_unattributed"
         }
         val evidence = when (state) {
+            "external_device" -> "Health Connect metadata identifies Fitbit app origin $sourcePackage."
             "watch_confirmed" -> "Health Connect metadata identifies Galaxy Watch5-series model $model."
             "manual" -> "Health Connect recording method is manual."
             else -> "Samsung Health origin; available metadata does not prove the source device."
@@ -560,28 +563,34 @@ class HealthConnectSync(
         private const val FALLBACK_BACKFILL_DAYS = 30L
         private val FULL_HISTORY_START: Instant = Instant.parse("2000-01-01T00:00:00Z")
         const val SAMSUNG_HEALTH_PACKAGE = "com.sec.android.app.shealth"
+        val FITBIT_HEALTH_CONNECT_PACKAGES: Set<String> = setOf("com.fitbit.FitbitMobile", "com.fitbit.fitbitmobile")
         private const val MAX_BATCH_BYTES = 1024 * 1024
         private const val MAX_SERIES_SAMPLES = 2000
         private const val SAMSUNG_CHANGES_PER_BATCH = 20
 
-        val READ_PERMISSIONS: Set<String> = setOf(
+        val CORE_READ_PERMISSIONS: Set<String> = setOf(
             HealthPermission.getReadPermission(StepsRecord::class),
             HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
             HealthPermission.getReadPermission(DistanceRecord::class),
             HealthPermission.getReadPermission(ExerciseSessionRecord::class),
+            HealthPermission.getReadPermission(HeartRateRecord::class),
+            HealthPermission.getReadPermission(OxygenSaturationRecord::class),
+            HealthPermission.getReadPermission(SleepSessionRecord::class),
+        )
+
+        val OPTIONAL_READ_PERMISSIONS: Set<String> = setOf(
             HealthPermission.getReadPermission(PowerRecord::class),
             HealthPermission.getReadPermission(SpeedRecord::class),
             HealthPermission.getReadPermission(Vo2MaxRecord::class),
-            HealthPermission.getReadPermission(HeartRateRecord::class),
-            HealthPermission.getReadPermission(OxygenSaturationRecord::class),
             HealthPermission.getReadPermission(BloodPressureRecord::class),
             HealthPermission.getReadPermission(BloodGlucoseRecord::class),
-            HealthPermission.getReadPermission(SleepSessionRecord::class),
             HealthPermission.getReadPermission(WeightRecord::class),
             HealthPermission.getReadPermission(BodyFatRecord::class),
             HealthPermission.getReadPermission(BasalMetabolicRateRecord::class),
             HealthPermission.getReadPermission(HeightRecord::class),
             HealthPermission.getReadPermission(NutritionRecord::class),
         )
+
+        val READ_PERMISSIONS: Set<String> = CORE_READ_PERMISSIONS + OPTIONAL_READ_PERMISSIONS
     }
 }

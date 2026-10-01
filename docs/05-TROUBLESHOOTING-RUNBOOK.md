@@ -1,7 +1,7 @@
 # Personal State Troubleshooting Runbook
 
 Document version: 1.0  
-Last verified: 2026-09-29
+Last verified: 2026-10-01
 Intended readers: user and trusted operators
 
 ## First principle
@@ -100,8 +100,48 @@ Personal State must not present a stale stored glucose value as current or inter
 3. Run `personal-state google-health-sync --hours 36`.
 4. Check sanitized adapter errors for an expired grant, denied scope, provider delay, or unsupported data type.
 5. Confirm `GoogleHealthEnabled = $true` for background collection.
+6. Open the Personal State phone companion and tap `Sync now` to force a Health Connect read/upload.
+7. Check whether Fitbit records appear under `Fitbit via Health Connect` even if the Google Health collector is degraded.
 
 Do not label a last synchronized Fitbit value as live. Fitbit and Google Health remain subject to their own mobile-app and cloud synchronization cadence.
+
+## Fitbit panel is synced but Casey biofeedback is stale
+
+This is a real data-currentness failure, not a UI failure. The phone or Google source may have uploaded Fitbit records while the newest Fitbit heart-rate sample is still outside the Casey currentness window.
+
+1. Confirm the dashboard says Fitbit is synced and source-labeled.
+2. Confirm the biofeedback reason is `fitbit_heart_rate_stale`, not a Google Health connection error.
+3. Open the Fitbit phone app and complete a device sync.
+4. Keep the phone near the Fitbit with network access and background execution allowed.
+5. Run the Personal State phone companion `Sync now` again.
+6. Recheck `/api/live` or the dashboard Fitbit panel for source state and age.
+7. If Fitbit still does not expose a current heart sample, evaluate the direct Fitbit cloud/API lane rather than falling back to the Galaxy Watch.
+
+Do not make Casey use Galaxy Watch heart rate as an invisible backup. If a fallback is ever shown, label it visibly and treat it as a different source.
+
+## Turning off Galaxy Watch live polling
+
+Use this when the watch is charging, off-wrist, or battery drain makes direct live polling unacceptable.
+
+1. Set `WatchLivePollingEnabled = $false` in `%LOCALAPPDATA%\PersonalStateMCP\settings.psd1`.
+2. Restart the dashboard service.
+3. Confirm `PERSONAL_STATE_WATCH_LIVE_POLLING_ENABLED=false` is exported by `scripts/load_settings.ps1`.
+4. Confirm the `live_heart_demand` lease is cleared rather than extended after `/api/live` is requested.
+5. Keep Health Connect/Fitbit phone sync enabled; this switch disables server-side direct watch demand, not phone ingestion.
+
+If the Android foreground service cannot be stopped directly, the server-side cleared live-demand lease is still the important control. The phone may continue asking whether live heart is wanted, but the server answers no.
+
+## Phone sync returns HTTP 502
+
+Treat this as a server-side failure until proven otherwise.
+
+1. Check the local dashboard process traceback before retrying.
+2. Check Cloudflare tunnel logs only after confirming the local server did not crash.
+3. If the traceback mentions `watch_ingest_rate_events`, the live database is missing an additive schema table. Restart the patched dashboard so `StateStore` runs the self-healing schema path.
+4. Retry phone `Sync now` once the local `/api/health` endpoint responds.
+5. Confirm the phone reports a successful upload and that the dashboard source panel advances.
+
+Do not uninstall the phone app to recover from 502. Uninstalling can destroy pairing and Health Connect grants.
 
 ## Dashboard does not open
 

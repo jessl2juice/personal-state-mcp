@@ -183,8 +183,15 @@ class HealthObservation:
             vendor = "Google Fit"
             source = "Google Fit Takeout historical export"
         elif self.adapter_id == "google_health_fitbit":
-            vendor = "Google Fitbit"
-            source = "Google Health API wearable stream"
+            exact_air = (
+                self.attribution.get("state") == "watch_confirmed"
+                and str(self.attribution.get("device_model", "")).casefold() in {"air", "fitbit air"}
+            )
+            vendor = "Fitbit" if exact_air else "Google Health"
+            source = "Fitbit Air via Google Health" if exact_air else "Google Health synchronized wearable history"
+        elif self.adapter_id == "android_health_connect_fitbit":
+            vendor = "Fitbit"
+            source = "Fitbit via Health Connect"
         elif self.adapter_id == "android_samsung_health_data":
             vendor = "Samsung"
             source = "Samsung Health Data SDK"

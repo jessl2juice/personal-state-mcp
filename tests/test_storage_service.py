@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from personal_state_mcp.config import AppConfig
-from personal_state_mcp.models import GlucoseReading, Provenance
+from personal_state_mcp.models import GlucoseReading, HealthObservation, Provenance
 from personal_state_mcp.service import HealthService
 from personal_state_mcp.storage import StateStore
 
@@ -53,6 +53,29 @@ def reading(now: datetime, value: int = 100, minutes_old: int = 3) -> GlucoseRea
             measurement_timestamp_source="unit_test",
         ),
     ).with_id()
+
+
+def watch_observation(now: datetime, *, record_id: str, adapter_id: str, value: int) -> HealthObservation:
+    return HealthObservation(
+        id=record_id,
+        metric="vitals.heart_rate",
+        category="vitals",
+        record_kind="series",
+        payload={"samples": [{"time": now.isoformat().replace("+00:00", "Z"), "value": value, "unit": "bpm"}]},
+        start_at=now - timedelta(seconds=30),
+        end_at=now,
+        observed_by_companion_at=now,
+        ingested_at_server=now,
+        source_package="health.googleapis.com" if adapter_id == "google_health_fitbit" else "com.sec.android.app.shealth",
+        recording_method="automatic",
+        attribution={"state": "external_device"},
+        installation_hash=adapter_id,
+        source_record_hash=record_id,
+        adapter_id=adapter_id,
+        adapter_version="test",
+        identity_namespace_id=adapter_id,
+        schema_version="personal-state-test/v1",
+    )
 
 
 class StorageServiceTests(unittest.TestCase):
@@ -107,6 +130,19 @@ class StorageServiceTests(unittest.TestCase):
         self.assertEqual(1, exported)
         self.assertEqual(1, deleted)
         self.assertTrue(output.read_text(encoding="utf-8").strip())
+
+    def test_delete_watch_source_history_only_removes_selected_adapter(self) -> None:
+        self.store.import_health_observations([
+            watch_observation(self.now, record_id="fitbit-heart", adapter_id="google_health_fitbit", value=68),
+            watch_observation(self.now, record_id="galaxy-heart", adapter_id="android_health_connect", value=76),
+        ])
+
+        deleted = self.store.delete_watch_source_history(("google_health_fitbit",))
+        remaining = self.store.watch_observations(metric="vitals.heart_rate")
+
+        self.assertEqual(1, deleted)
+        self.assertEqual(1, len(remaining))
+        self.assertEqual("android_health_connect", remaining[0].adapter_id)
 
 
 if __name__ == "__main__":

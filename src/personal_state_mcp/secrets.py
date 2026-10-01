@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import getpass
 import os
+from pathlib import Path
 import secrets
 from uuid import uuid4
 
@@ -11,6 +12,46 @@ SERVICE_NAME = "personal-state-mcp"
 
 class SecretError(RuntimeError):
     pass
+
+
+GOOGLE_HEALTH_CREDENTIAL_NAMES = ("client-id", "client-secret", "refresh-token", "redirect-uri")
+
+
+def _default_data_dir() -> Path:
+    override = os.environ.get("PERSONAL_STATE_MCP_DATA_DIR")
+    if override:
+        return Path(override).expanduser()
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        return Path(local_app_data) / "PersonalStateMCP"
+    return Path.home() / ".local" / "share" / "personal-state-mcp"
+
+
+def _google_health_credentials_file() -> Path:
+    override = os.environ.get("PERSONAL_STATE_GOOGLE_HEALTH_CREDENTIALS_FILE")
+    if override:
+        return Path(override).expanduser()
+    return _default_data_dir() / "google-health-credentials.json"
+
+
+def _credentials_from_values(values: dict[str, str | None]) -> dict[str, str] | None:
+    if not all(values.get(name) for name in GOOGLE_HEALTH_CREDENTIAL_NAMES):
+        return None
+    return {
+        "client_id": values["client-id"] or "",
+        "client_secret": values["client-secret"] or "",
+        "refresh_token": values["refresh-token"] or "",
+        "redirect_uri": values["redirect-uri"] or "",
+        "scopes": values.get("scopes") or "",
+    }
+
+
+def _delete_google_health_credentials_file(*, missing_ok: bool) -> None:
+    try:
+        _google_health_credentials_file().unlink()
+    except FileNotFoundError:
+        if not missing_ok:
+            raise
 
 
 def get_libre_password(email: str) -> str | None:
@@ -138,18 +179,9 @@ def get_google_health_credentials() -> dict[str, str] | None:
         import keyring  # type: ignore
     except Exception:
         return None
-    names = ("client-id", "client-secret", "refresh-token", "redirect-uri")
-    values = {name: keyring.get_password(SERVICE_NAME, f"google-health:{name}") for name in names}
-    if not all(values.values()):
-        return None
-    scopes = keyring.get_password(SERVICE_NAME, "google-health:scopes") or ""
-    return {
-        "client_id": values["client-id"] or "",
-        "client_secret": values["client-secret"] or "",
-        "refresh_token": values["refresh-token"] or "",
-        "redirect_uri": values["redirect-uri"] or "",
-        "scopes": scopes,
-    }
+    values = {name: keyring.get_password(SERVICE_NAME, f"google-health:{name}") for name in GOOGLE_HEALTH_CREDENTIAL_NAMES}
+    values["scopes"] = keyring.get_password(SERVICE_NAME, "google-health:scopes") or ""
+    return _credentials_from_values(values)
 
 
 def set_google_health_credentials(
@@ -160,10 +192,6 @@ def set_google_health_credentials(
     redirect_uri: str,
     scopes: str,
 ) -> None:
-    try:
-        import keyring  # type: ignore
-    except Exception as exc:
-        raise SecretError("The optional keyring package is required to store Google Health credentials.") from exc
     values = {
         "client-id": client_id,
         "client-secret": client_secret,
@@ -171,14 +199,23 @@ def set_google_health_credentials(
         "redirect-uri": redirect_uri,
         "scopes": scopes,
     }
-    for name, value in values.items():
-        keyring.set_password(SERVICE_NAME, f"google-health:{name}", value)
+    try:
+        import keyring  # type: ignore
+    except Exception as exc:
+        raise SecretError("The optional keyring package is required to store Google Health credentials in the OS keychain.") from exc
+    try:
+        for name, value in values.items():
+            keyring.set_password(SERVICE_NAME, f"google-health:{name}", value)
+    except Exception as exc:
+        raise SecretError("Could not store Google Health credentials in the OS keychain.") from exc
 
 
 def delete_google_health_credentials(*, missing_ok: bool = False) -> None:
     try:
         import keyring  # type: ignore
-    except Exception as exc:
-        raise SecretError("The optional keyring package is required to delete Google Health credentials.") from exc
+    except Exception:
+        _delete_google_health_credentials_file(missing_ok=missing_ok)
+        return
     for name in ("client-id", "client-secret", "refresh-token", "redirect-uri", "scopes"):
         _delete_password(keyring, f"google-health:{name}", missing_ok=missing_ok)
+    _delete_google_health_credentials_file(missing_ok=True)

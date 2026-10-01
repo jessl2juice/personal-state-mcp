@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS health_observations (
 );
 CREATE INDEX IF NOT EXISTS idx_health_metric_time ON health_observations(metric, COALESCE(measured_at_utc, end_at_utc, start_at_utc) DESC);
 CREATE INDEX IF NOT EXISTS idx_health_ingested ON health_observations(ingested_at_server_utc DESC);
+CREATE INDEX IF NOT EXISTS idx_health_exact_dedupe ON health_observations(metric, measured_at_utc, start_at_utc, end_at_utc, payload_json);
 
 CREATE TABLE IF NOT EXISTS health_tombstones (
     observation_id TEXT PRIMARY KEY,
@@ -140,6 +141,15 @@ CREATE TABLE IF NOT EXISTS watch_replay_nonces (
     PRIMARY KEY (device_hash, nonce_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_watch_nonce_time ON watch_replay_nonces(seen_at_utc);
+
+CREATE TABLE IF NOT EXISTS watch_ingest_rate_events (
+    device_hash TEXT NOT NULL,
+    bucket TEXT NOT NULL,
+    batch_id TEXT NOT NULL,
+    seen_at_utc TEXT NOT NULL,
+    PRIMARY KEY (device_hash, bucket, batch_id)
+);
+CREATE INDEX IF NOT EXISTS idx_watch_rate_time ON watch_ingest_rate_events(device_hash, bucket, seen_at_utc);
 """
 
 
@@ -176,15 +186,46 @@ def _parse_dt(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
+def _open_connection(path: Path, *, timeout: float = 30) -> sqlite3.Connection:
+    conn = sqlite3.connect(path, timeout=timeout)
+    conn.execute(f"PRAGMA busy_timeout = {max(0, int(timeout * 1000))}")
+    return conn
+
+
 class StateStore:
     def __init__(self, path: Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.init_schema()
+        if self._schema_current():
+            return
+        try:
+            self.init_schema()
+        except sqlite3.OperationalError as exc:
+            if not self.path.exists() or "locked" not in str(exc).lower():
+                raise
+
+    def _schema_current(self) -> bool:
+        if not self.path.exists() or self.path.stat().st_size == 0:
+            return False
+        try:
+            conn = _open_connection(self.path)
+            try:
+                migration = conn.execute("SELECT 1 FROM schema_migrations WHERE version = 3").fetchone()
+                index = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_health_exact_dedupe'"
+                ).fetchone()
+                rate_events = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'watch_ingest_rate_events'"
+                ).fetchone()
+                return bool(migration and index and rate_events)
+            finally:
+                conn.close()
+        except sqlite3.DatabaseError:
+            return False
 
     @contextmanager
-    def connect(self):
-        conn = sqlite3.connect(self.path)
+    def connect(self, *, timeout: float = 30):
+        conn = _open_connection(self.path, timeout=timeout)
         conn.row_factory = sqlite3.Row
         try:
             yield conn
@@ -194,8 +235,9 @@ class StateStore:
 
     def init_schema(self) -> None:
         existed = self.path.exists() and self.path.stat().st_size > 0
-        conn = sqlite3.connect(self.path)
+        conn = _open_connection(self.path)
         try:
+            conn.execute("PRAGMA journal_mode = WAL")
             conn.executescript(SCHEMA)
             applied = conn.execute("SELECT 1 FROM schema_migrations WHERE version = 2").fetchone()
             if not applied:
@@ -323,7 +365,7 @@ class StateStore:
 
     def request_live_heart(self, now: datetime, lease_seconds: int = 20) -> dict[str, Any]:
         requested_until = now + timedelta(seconds=max(10, min(lease_seconds, 60)))
-        with self.connect() as conn:
+        with self.connect(timeout=2.0) as conn:
             conn.execute(
                 """
                 UPDATE live_heart_demand
@@ -331,6 +373,23 @@ class StateStore:
                 WHERE singleton = 1
                 """,
                 (iso_utc(requested_until), iso_utc(now)),
+            )
+            row = conn.execute(
+                "SELECT revision, requested_until_utc, updated_at_utc FROM live_heart_demand WHERE singleton = 1"
+            ).fetchone()
+        return dict(row)
+
+    def clear_live_heart_demand(self, now: datetime) -> dict[str, Any]:
+        with self.connect(timeout=2.0) as conn:
+            conn.execute(
+                """
+                UPDATE live_heart_demand
+                SET revision = revision + 1,
+                    requested_until_utc = '1970-01-01T00:00:00Z',
+                    updated_at_utc = ?
+                WHERE singleton = 1
+                """,
+                (iso_utc(now),),
             )
             row = conn.execute(
                 "SELECT revision, requested_until_utc, updated_at_utc FROM live_heart_demand WHERE singleton = 1"
@@ -400,6 +459,23 @@ class StateStore:
 
     def import_health_observations(self, observations: Iterable[HealthObservation]) -> dict[str, int]:
         """Import historical health observations with adapter-independent exact deduplication."""
+        inserted = 0
+        duplicates = 0
+        batch: list[HealthObservation] = []
+        for observation in observations:
+            batch.append(observation)
+            if len(batch) >= 50:
+                result = self._import_health_observation_batch(batch)
+                inserted += result["inserted"]
+                duplicates += result["duplicates"]
+                batch.clear()
+        if batch:
+            result = self._import_health_observation_batch(batch)
+            inserted += result["inserted"]
+            duplicates += result["duplicates"]
+        return {"inserted": inserted, "duplicates": duplicates}
+
+    def _import_health_observation_batch(self, observations: Iterable[HealthObservation]) -> dict[str, int]:
         inserted = 0
         duplicates = 0
         with self.connect() as conn:
@@ -536,9 +612,15 @@ class StateStore:
                 ),
             )
 
-    def last_collector_run(self) -> dict[str, Any] | None:
+    def last_collector_run(self, adapter: str | None = None) -> dict[str, Any] | None:
         with self.connect() as conn:
-            row = conn.execute("SELECT * FROM collector_runs ORDER BY started_at_utc DESC LIMIT 1").fetchone()
+            if adapter is None:
+                row = conn.execute("SELECT * FROM collector_runs ORDER BY started_at_utc DESC LIMIT 1").fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM collector_runs WHERE adapter = ? ORDER BY started_at_utc DESC LIMIT 1",
+                    (adapter,),
+                ).fetchone()
         return dict(row) if row else None
 
     def collector_runs(self, limit: int = 20) -> list[dict[str, Any]]:
@@ -628,6 +710,41 @@ class StateStore:
                 (device_hash, iso_utc(since)),
             ).fetchone()
         return int(row["count"])
+
+    def watch_rate_events_since(self, device_hash: str, bucket: str, since: datetime) -> int:
+        try:
+            with self.connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT COUNT(*) AS count FROM watch_ingest_rate_events
+                    WHERE device_hash = ? AND bucket = ? AND seen_at_utc >= ?
+                    """,
+                    (device_hash, bucket, iso_utc(since)),
+                ).fetchone()
+        except sqlite3.OperationalError as exc:
+            if "watch_ingest_rate_events" not in str(exc):
+                raise
+            self.init_schema()
+            return self.watch_rate_events_since(device_hash, bucket, since)
+        return int(row["count"])
+
+    def record_watch_rate_event(self, device_hash: str, bucket: str, batch_id: str, now: datetime) -> None:
+        cutoff = now - timedelta(hours=24)
+        try:
+            with self.connect() as conn:
+                conn.execute("DELETE FROM watch_ingest_rate_events WHERE seen_at_utc < ?", (iso_utc(cutoff),))
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO watch_ingest_rate_events (device_hash, bucket, batch_id, seen_at_utc)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (device_hash, bucket, batch_id, iso_utc(now)),
+                )
+        except sqlite3.OperationalError as exc:
+            if "watch_ingest_rate_events" not in str(exc):
+                raise
+            self.init_schema()
+            self.record_watch_rate_event(device_hash, bucket, batch_id, now)
 
     def apply_watch_batch(
         self,
@@ -905,18 +1022,24 @@ class StateStore:
         *,
         metric: str | None = None,
         since: datetime | None = None,
+        adapter_ids: Iterable[str] | None = None,
         limit: int = 200,
         offset: int = 0,
         descending: bool = True,
     ) -> list[HealthObservation]:
         clauses: list[str] = []
         params: list[Any] = []
+        adapters = tuple(dict.fromkeys(adapter_ids or ()))
         if metric:
             clauses.append("metric = ?")
             params.append(metric)
         if since:
             clauses.append("COALESCE(measured_at_utc, end_at_utc, start_at_utc) >= ?")
             params.append(iso_utc(since))
+        if adapters:
+            placeholders = ", ".join("?" for _ in adapters)
+            clauses.append(f"adapter_id IN ({placeholders})")
+            params.extend(adapters)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         direction = "DESC" if descending else "ASC"
         params.extend([max(1, min(int(limit), 100_000)), max(0, int(offset))])
@@ -1025,6 +1148,38 @@ class StateStore:
                 "DELETE FROM health_observations WHERE COALESCE(measured_at_utc, end_at_utc, start_at_utc) < ?",
                 (cutoff,),
             )
+            return count
+
+    def delete_watch_source_history(
+        self,
+        adapter_ids: Iterable[str],
+        *,
+        before: datetime | None = None,
+    ) -> int:
+        adapters = tuple(dict.fromkeys(adapter_ids))
+        if not adapters:
+            return 0
+        placeholders = ", ".join("?" for _ in adapters)
+        params: list[Any] = list(adapters)
+        before_clause = ""
+        if before is not None:
+            before_clause = " AND COALESCE(measured_at_utc, end_at_utc, start_at_utc) < ?"
+            params.append(iso_utc(before))
+        with self.connect() as conn:
+            count = int(conn.execute(
+                f"SELECT COUNT(*) AS count FROM health_observations WHERE adapter_id IN ({placeholders}){before_clause}",
+                params,
+            ).fetchone()["count"])
+            conn.execute(
+                f"DELETE FROM health_observations WHERE adapter_id IN ({placeholders}){before_clause}",
+                params,
+            )
+            if before is None:
+                conn.execute(f"DELETE FROM health_tombstones WHERE adapter_id IN ({placeholders})", adapters)
+                conn.execute(f"DELETE FROM watch_availability WHERE adapter_id IN ({placeholders})", adapters)
+                conn.execute(f"DELETE FROM device_sync_runs WHERE adapter_id IN ({placeholders})", adapters)
+                conn.execute(f"DELETE FROM health_association_members WHERE adapter_id IN ({placeholders})", adapters)
+                conn.execute(f"DELETE FROM health_associations WHERE adapter_id IN ({placeholders})", adapters)
             return count
 
     def prune_watch_retention(self, retention_days: int, now: datetime | None = None) -> int:

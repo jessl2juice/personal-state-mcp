@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 import hashlib
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import sqlite3
 import statistics
 import threading
 from typing import Any
@@ -21,10 +22,12 @@ from .adapters.google_health import GoogleHealthAdapter
 from .collector import Collector
 from .config import AppConfig, load_config
 from .freshness import FreshnessPolicy, classify_freshness, classify_threshold
-from .models import GlucoseReading, HealthObservation, SAFETY_NOTICE, iso_utc, utc_now
+from .models import GlucoseReading, HealthObservation, SAFETY_NOTICE, iso_utc, stable_hash, utc_now
+from .source_registry import adapter_ids_for_watch_source, public_watch_source_filters
 from .storage import StateStore
 from .watch_contract import (
     DIRECT_WEAR_LIVE_MAX_AGE_SECONDS,
+    FITBIT_HEALTH_CONNECT_ADAPTER_ID,
     MAX_BODY_BYTES,
     OBSERVATION_METRICS,
     SCHEMA_VERSION,
@@ -60,6 +63,13 @@ RANGES: dict[str, float | None] = {
 MAX_SOURCE_READINGS = 200_000
 MAX_CHART_POINTS = 1_200
 HEART_LIVE_MAX_AGE_SECONDS = DIRECT_WEAR_LIVE_MAX_AGE_SECONDS
+FITBIT_BIOFEEDBACK_MAX_AGE_SECONDS = 120
+GALAXY_SOURCE_ADAPTERS = (
+    "wear_health_services",
+    "android_samsung_health_data",
+    "android_health_connect",
+)
+FITBIT_SOURCE_ADAPTERS = ("google_health_fitbit", FITBIT_HEALTH_CONNECT_ADAPTER_ID)
 HISTORICAL_OBSERVATION_METRICS = {
     "activity.total_calories",
     "activity.move_minutes",
@@ -72,7 +82,8 @@ HISTORICAL_OBSERVATION_METRICS = {
     "activity.active_zone_minutes",
     "activity.total_calories",
 }
-WATCH_INGEST_REQUESTS_PER_MINUTE = 40
+WATCH_HEALTH_SYNC_REQUESTS_PER_MINUTE = 80
+WATCH_LIVE_HEART_REQUESTS_PER_MINUTE = 240
 AVAILABILITY_TTL = timedelta(hours=26)
 AVAILABILITY_PRECEDENCE = (
     "available",
@@ -371,6 +382,55 @@ def _glucose_stream_status(
     }
 
 
+def _sync_status(
+    last_run: dict[str, Any] | None,
+    *,
+    has_stored_data: bool,
+) -> dict[str, Any]:
+    if last_run is None:
+        return {
+            "status": "stored_history_only" if has_stored_data else "waiting",
+            "degraded": False,
+            "message": (
+                "Stored history is available, but no collector run has been recorded."
+                if has_stored_data
+                else "Waiting for the first collector run."
+            ),
+            "last_run": None,
+        }
+    status = str(last_run.get("status") or "unknown")
+    error_code = str(last_run.get("error_code") or "")
+    finished_at = last_run.get("finished_at_utc")
+    degraded_codes = {"adapter_timeout", "adapter_already_running", "adapter_error"}
+    if status in {"error", "partial"} or error_code in degraded_codes:
+        return {
+            "status": "stored_history_only" if has_stored_data else "sync_degraded",
+            "degraded": True,
+            "message": (
+                f"Latest collector run was {status}; showing stored history only."
+                if has_stored_data
+                else f"Latest collector run was {status}; current source sync is degraded."
+            ),
+            "last_run": {
+                "adapter": last_run.get("adapter"),
+                "status": status,
+                "error_code": error_code or None,
+                "finished_at": finished_at,
+            },
+        }
+    return {
+        "status": "ok" if status == "ok" else status,
+        "degraded": False,
+        "message": "Latest collector run completed." if status == "ok" else f"Latest collector run status: {status}.",
+        "last_run": {
+            "adapter": last_run.get("adapter"),
+            "status": status,
+            "error_code": error_code or None,
+            "finished_at": finished_at,
+        },
+    }
+
+
 def _merged_watch_availability(
     rows: list[dict[str, Any]],
     active_installations: set[str],
@@ -451,6 +511,81 @@ def _merged_watch_availability(
     return merged, active_rows
 
 
+def _fitbit_biofeedback_status(
+    source_summary: dict[str, Any],
+    latest_by_metric: dict[str, Any],
+    *,
+    max_age_seconds: int = FITBIT_BIOFEEDBACK_MAX_AGE_SECONDS,
+) -> dict[str, Any]:
+    heart = latest_by_metric.get("vitals.heart_rate")
+    age_seconds = None
+    if isinstance(heart, dict):
+        recency = heart.get("observation_recency")
+        if isinstance(recency, dict) and isinstance(recency.get("measurement_age_seconds"), (int, float)):
+            age_seconds = int(recency["measurement_age_seconds"])
+    source_status = str(source_summary.get("status") or "unknown")
+    if heart is None:
+        if source_status in {"error", "sync_error"}:
+            status = "blocked"
+            reason = "google_health_sync_failed"
+            message = "Fitbit biofeedback is unavailable because Google Health refresh is failing."
+        else:
+            status = "missing"
+            reason = "no_fitbit_heart_rate"
+            message = "Fitbit biofeedback is unavailable because no Fitbit heart-rate record is stored."
+    elif age_seconds is None:
+        status = "unknown"
+        reason = "unknown_fitbit_age"
+        message = "Fitbit biofeedback is unavailable because the latest Fitbit heart-rate age is unknown."
+    elif age_seconds <= max_age_seconds:
+        status = "current"
+        reason = "fitbit_heart_rate_current"
+        message = "Fitbit heart rate is current enough for Casey biofeedback."
+    else:
+        status = "stale"
+        reason = "fitbit_heart_rate_stale"
+        message = "Fitbit biofeedback is unavailable because the latest Fitbit heart-rate record is too old."
+    return {
+        "status": status,
+        "usable": status == "current",
+        "reason": reason,
+        "max_age_seconds": max_age_seconds,
+        "age_seconds": age_seconds,
+        "source_status": source_status,
+        "message": message,
+        "latest_heart_rate": heart,
+        "fallback_source": None,
+    }
+
+
+def _has_fitbit_phone_data(observations: list[HealthObservation]) -> bool:
+    return any(observation.adapter_id == FITBIT_HEALTH_CONNECT_ADAPTER_ID for observation in observations)
+
+
+def _has_current_fitbit_phone_heart(
+    observations: list[HealthObservation],
+    now: datetime,
+    *,
+    max_age_seconds: int = FITBIT_BIOFEEDBACK_MAX_AGE_SECONDS,
+) -> bool:
+    for observation in observations:
+        if observation.adapter_id != FITBIT_HEALTH_CONNECT_ADAPTER_ID or observation.metric != "vitals.heart_rate":
+            continue
+        if max(0, int((now - observation.event_at).total_seconds())) <= max_age_seconds:
+            return True
+    return False
+
+
+def _watch_ingest_rate_bucket(observations: list[HealthObservation], deletions: list[dict[str, Any]]) -> str:
+    if (
+        observations
+        and not deletions
+        and all(observation.adapter_id == "wear_health_services" and observation.metric == "vitals.heart_rate" for observation in observations)
+    ):
+        return "live_heart"
+    return "health_sync"
+
+
 class DashboardApp:
     def __init__(self, config: AppConfig):
         self.config = config
@@ -461,6 +596,11 @@ class DashboardApp:
         self.collector = Collector(
             store=self.store,
             adapters=adapters,
+            min_poll_interval_seconds=config.min_poll_interval_seconds,
+        )
+        self.libre_collector = Collector(
+            store=self.store,
+            adapters=[LibreLinkUpAdapter(config)],
             min_poll_interval_seconds=config.min_poll_interval_seconds,
         )
         self.refresh_lock = threading.Lock()
@@ -502,6 +642,174 @@ class DashboardApp:
         host = header.rsplit(":", 1)[0].strip("[]").lower()
         return host in self.ingest_hosts or host in {"127.0.0.1", "localhost"}
 
+    def _latest_watch_source_payload(
+        self,
+        adapter_ids: tuple[str, ...],
+        now: datetime,
+    ) -> tuple[dict[str, Any], list[HealthObservation]]:
+        by_metric = self.store.latest_watch_by_metric(adapter_ids=adapter_ids)
+        today_steps = self._today_steps_observation(adapter_ids, now)
+        if today_steps is not None:
+            by_metric["activity.steps"] = today_steps
+        elif self._is_cross_day_steps_aggregate(by_metric.get("activity.steps"), now):
+            by_metric.pop("activity.steps", None)
+        observations = list(by_metric.values())
+        payload: dict[str, Any] = {}
+        for observation in observations:
+            item = observation.public_dict()
+            item["observation_recency"] = observation_recency(observation, now)
+            payload[observation.metric] = item
+        return payload, observations
+
+    def _today_steps_observation(
+        self,
+        adapter_ids: tuple[str, ...],
+        now: datetime,
+    ) -> HealthObservation | None:
+        tzinfo = self.config.source_tzinfo or timezone.utc
+        today = now.astimezone(tzinfo).date()
+        local_start = datetime.combine(today, time.min, tzinfo=tzinfo)
+        since = local_start.astimezone(timezone.utc)
+        records = self.store.watch_observations(
+            metric="activity.steps",
+            since=since,
+            adapter_ids=adapter_ids,
+            limit=100_000,
+            descending=False,
+        )
+        daily_records: list[HealthObservation] = []
+        interval_records: list[HealthObservation] = []
+        for observation in records:
+            value = observation.payload.get("value")
+            if not isinstance(value, (int, float)):
+                continue
+            if observation.local_date == today.isoformat():
+                daily_records.append(observation)
+                continue
+            event_at = observation.event_at
+            if event_at.astimezone(tzinfo).date() != today:
+                continue
+            start_at = observation.start_at
+            end_at = observation.end_at
+            if start_at is not None and end_at is not None:
+                if start_at.astimezone(tzinfo).date() != today or end_at.astimezone(tzinfo).date() != today:
+                    continue
+                duration_seconds = (end_at - start_at).total_seconds()
+                if duration_seconds > 6 * 3600:
+                    continue
+            if observation.payload.get("aggregation") in {"health_connect", "google_fit_daily_summary"}:
+                continue
+            interval_records.append(observation)
+
+        if daily_records:
+            return max(daily_records, key=lambda item: (item.observed_by_companion_at, item.event_at, item.id))
+        if not interval_records:
+            return None
+
+        latest = max(interval_records, key=lambda item: (item.event_at, item.observed_by_companion_at, item.id))
+        observed_at = max(item.observed_by_companion_at for item in interval_records)
+        ingested_at = max(item.ingested_at_server for item in interval_records)
+        total = int(round(sum(float(item.payload["value"]) for item in interval_records)))
+        source_ids = [item.id for item in interval_records]
+        record_hash = stable_hash(
+            json.dumps(
+                {
+                    "adapter_ids": adapter_ids,
+                    "local_date": today.isoformat(),
+                    "source_ids": source_ids,
+                    "total": total,
+                },
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
+        return HealthObservation(
+            id=stable_hash(f"today_steps|{record_hash}"),
+            metric="activity.steps",
+            category="activity",
+            record_kind="aggregate",
+            payload={
+                "aggregation": "today_so_far",
+                "source_observation_count": len(interval_records),
+                "unit": "count",
+                "value": total,
+            },
+            start_at=since,
+            end_at=latest.event_at,
+            observed_by_companion_at=observed_at,
+            ingested_at_server=ingested_at,
+            upstream_last_modified_at=latest.upstream_last_modified_at,
+            source_package=latest.source_package,
+            recording_method="derived",
+            attribution={**latest.attribution, "evidence": "Summed same-day step intervals for the local calendar day."},
+            installation_hash=latest.installation_hash,
+            source_record_hash=record_hash,
+            adapter_id=latest.adapter_id,
+            adapter_version=latest.adapter_version,
+            identity_namespace_id=latest.identity_namespace_id,
+            association_hash=latest.association_hash,
+            local_date=today.isoformat(),
+            schema_version=latest.schema_version,
+        )
+
+    def _is_cross_day_steps_aggregate(self, observation: HealthObservation | None, now: datetime) -> bool:
+        if observation is None or observation.metric != "activity.steps":
+            return False
+        if observation.payload.get("aggregation") not in {"health_connect", "google_fit_daily_summary"}:
+            return False
+        if observation.local_date:
+            return False
+        if observation.start_at is None or observation.end_at is None:
+            return False
+        tzinfo = self.config.source_tzinfo or timezone.utc
+        start_day = observation.start_at.astimezone(tzinfo).date()
+        end_day = observation.end_at.astimezone(tzinfo).date()
+        return start_day != end_day or end_day != now.astimezone(tzinfo).date()
+
+    @staticmethod
+    def _watch_source_summary(
+        observations: list[HealthObservation],
+        *,
+        configured: bool,
+        now: datetime,
+        live: bool = False,
+        last_run: dict[str, Any] | None = None,
+        stale_after_seconds: int | None = None,
+    ) -> dict[str, Any]:
+        latest_at = max((observation.event_at for observation in observations), default=None)
+        age_seconds = max(0, int((now - latest_at).total_seconds())) if latest_at else None
+        run_status = str(last_run.get("status") or "") if last_run else ""
+        run_error_code = str(last_run.get("error_code") or "") if last_run else ""
+        run_failed = bool(last_run and (run_status in {"error", "partial"} or run_error_code))
+        if live:
+            status = "live"
+        elif run_failed and observations:
+            status = "sync_error"
+        elif run_failed:
+            status = "error"
+        elif observations and stale_after_seconds is not None and age_seconds is not None and age_seconds > stale_after_seconds:
+            status = "stale"
+        elif observations:
+            status = "synced"
+        elif configured:
+            status = "ready"
+        else:
+            status = "not_connected"
+        return {
+            "status": status,
+            "configured": configured,
+            "metric_count": len(observations),
+            "latest_at": iso_utc(latest_at),
+            "age_seconds": age_seconds,
+            "stale_after_seconds": stale_after_seconds,
+            "last_run": {
+                "adapter": last_run.get("adapter"),
+                "status": run_status,
+                "error_code": run_error_code or None,
+                "finished_at": last_run.get("finished_at_utc"),
+            } if last_run else None,
+        }
+
     def watch_dashboard(
         self,
         now: datetime,
@@ -520,24 +828,10 @@ class DashboardApp:
             item["observation_recency"] = observation_recency(observation, now)
             latest_payload[metric] = item
 
-        galaxy_adapters = (
-            "wear_health_services",
-            "android_samsung_health_data",
-            "android_health_connect",
-        )
-        fitbit_adapters = ("google_health_fitbit",)
-
-        def latest_source_payload(adapter_ids: tuple[str, ...]) -> tuple[dict[str, Any], list[HealthObservation]]:
-            observations = list(self.store.latest_watch_by_metric(adapter_ids=adapter_ids).values())
-            payload: dict[str, Any] = {}
-            for observation in observations:
-                item = observation.public_dict()
-                item["observation_recency"] = observation_recency(observation, now)
-                payload[observation.metric] = item
-            return payload, observations
-
-        galaxy_latest, galaxy_observations = latest_source_payload(galaxy_adapters)
-        fitbit_latest, fitbit_observations = latest_source_payload(fitbit_adapters)
+        galaxy_adapters = GALAXY_SOURCE_ADAPTERS
+        fitbit_adapters = FITBIT_SOURCE_ADAPTERS
+        galaxy_latest, galaxy_observations = self._latest_watch_source_payload(galaxy_adapters, now)
+        fitbit_latest, fitbit_observations = self._latest_watch_source_payload(fitbit_adapters, now)
         direct_heart_observation = self.store.latest_watch_by_metric(
             metrics=("vitals.heart_rate",),
             adapter_ids=("wear_health_services",),
@@ -580,35 +874,28 @@ class DashboardApp:
         if heart_sync_summary["last_at"] is None and direct_heart_payload:
             heart_sync_summary["last_at"] = direct_heart_payload.get("observation_recency", {}).get("event_at")
         heart_sync = _heart_sync_status(heart_sync_summary, last_upload, now)
-
-        def source_summary(
-            observations: list[HealthObservation],
-            *,
-            configured: bool,
-            live: bool = False,
-        ) -> dict[str, Any]:
-            latest_at = max((observation.event_at for observation in observations), default=None)
-            if live:
-                status = "live"
-            elif observations:
-                status = "synced"
-            elif configured:
-                status = "ready"
-            else:
-                status = "not_connected"
-            return {
-                "status": status,
-                "configured": configured,
-                "metric_count": len(observations),
-                "latest_at": iso_utc(latest_at),
-                "age_seconds": max(0, int((now - latest_at).total_seconds())) if latest_at else None,
-            }
+        fitbit_last_run = self.store.last_collector_run("google_health_fitbit")
+        fitbit_last_run_for_summary = None if _has_fitbit_phone_data(fitbit_observations) else fitbit_last_run
+        fitbit_stale_after_seconds = max(1800, int(self.config.google_health_sync_interval_seconds) * 2)
 
         galaxy_configured = bool(
             self.config.watch_enabled
             and self.config.watch_device_id
             and self.config.watch_device_secret
             and self.config.watch_identifier_key
+        )
+        galaxy_source = self._watch_source_summary(
+            galaxy_observations,
+            configured=galaxy_configured,
+            now=now,
+            live=heart_sync["status"] == "current",
+        )
+        fitbit_source = self._watch_source_summary(
+            fitbit_observations,
+            configured=self.config.google_health_enabled or galaxy_configured,
+            now=now,
+            last_run=fitbit_last_run_for_summary,
+            stale_after_seconds=fitbit_stale_after_seconds,
         )
         return {
             "enabled": self.config.watch_enabled,
@@ -621,16 +908,10 @@ class DashboardApp:
             },
             "direct_heart_rate": direct_heart_payload,
             "sources": {
-                "galaxy": source_summary(
-                    galaxy_observations,
-                    configured=galaxy_configured,
-                    live=heart_sync["status"] == "current",
-                ),
-                "fitbit": source_summary(
-                    fitbit_observations,
-                    configured=self.config.google_health_enabled,
-                ),
+                "galaxy": galaxy_source,
+                "fitbit": fitbit_source,
             },
+            "fitbit_biofeedback": _fitbit_biofeedback_status(fitbit_source, fitbit_latest),
             "heart_rate_samples": _downsample_numeric_points(
                 _mark_numeric_segments(heart_samples, max_gap_seconds=60)
             ),
@@ -648,15 +929,18 @@ class DashboardApp:
             "sync_limit": "Galaxy heart rate is labeled live only when measured within ten seconds. Fitbit records are synchronized and are never labeled live.",
         }
 
-    def watch_metric_history(self, metric: str, range_key: str) -> dict[str, Any]:
+    def watch_metric_history(self, metric: str, range_key: str, source: str | None = None) -> dict[str, Any]:
         allowed_metrics = set(OBSERVATION_METRICS) | SAMSUNG_OBSERVATION_METRICS | HISTORICAL_OBSERVATION_METRICS
         if metric not in allowed_metrics:
             raise ValueError("unsupported_watch_metric")
+        adapter_ids = adapter_ids_for_watch_source(source)
+        if source and adapter_ids is None:
+            raise ValueError("unsupported_watch_source")
         if range_key not in RANGES:
             range_key = "24h"
         now = utc_now()
         since = _range_since(range_key, now)
-        records = self.store.watch_observations(metric=metric, since=since, limit=100_000)
+        records = self.store.watch_observations(metric=metric, since=since, adapter_ids=adapter_ids, limit=100_000)
         records.reverse()
         points: list[dict[str, Any]] = []
         for record in records:
@@ -680,6 +964,8 @@ class DashboardApp:
                 points.append({"time": iso_utc(event_at), "value": value, "unit": unit})
         return {
             "metric": metric,
+            "source": source or None,
+            "source_filters": public_watch_source_filters(),
             "generated_at": iso_utc(now),
             "range": {"key": range_key, "window_start": iso_utc(since) if since else None, "window_end": iso_utc(now)},
             "points": _downsample_numeric_points(points),
@@ -718,13 +1004,6 @@ class DashboardApp:
                 return HTTPStatus.OK, {"status": "already_committed", "batch_id": batch_id}
             return HTTPStatus.CONFLICT, {"error": "batch_id_conflict"}
 
-        device_hash = keyed_hash(self.config.watch_identifier_key, f"device|{device_id}")
-        if self.store.watch_requests_since(device_hash, now - timedelta(minutes=1)) >= WATCH_INGEST_REQUESTS_PER_MINUTE:
-            return HTTPStatus.TOO_MANY_REQUESTS, {"error": "device_rate_limit", "retryable": True}
-        nonce_hash = keyed_hash(self.config.watch_identifier_key, f"nonce|{nonce}")
-        if not self.store.claim_watch_nonce(device_hash, nonce_hash, batch_id, now):
-            return HTTPStatus.CONFLICT, {"error": "replay_rejected"}
-
         try:
             batch = parse_json_strict(body)
             schema_version = batch.get("schema_version")
@@ -746,6 +1025,23 @@ class DashboardApp:
                 raise WatchContractError("upgrade_required", "The watch schema version is not supported.")
             if batch["batch_id"] != batch_id:
                 raise WatchContractError("batch_id_mismatch", "The signed batch identifier does not match the body.")
+            device_hash = keyed_hash(self.config.watch_identifier_key, f"device|{device_id}")
+            rate_bucket = _watch_ingest_rate_bucket(observations, deletions)
+            rate_limit = (
+                WATCH_LIVE_HEART_REQUESTS_PER_MINUTE
+                if rate_bucket == "live_heart"
+                else WATCH_HEALTH_SYNC_REQUESTS_PER_MINUTE
+            )
+            if self.store.watch_rate_events_since(device_hash, rate_bucket, now - timedelta(minutes=1)) >= rate_limit:
+                return HTTPStatus.TOO_MANY_REQUESTS, {
+                    "error": "device_rate_limit",
+                    "retryable": True,
+                    "bucket": rate_bucket,
+                }
+            nonce_hash = keyed_hash(self.config.watch_identifier_key, f"nonce|{nonce}")
+            if not self.store.claim_watch_nonce(device_hash, nonce_hash, batch_id, now):
+                return HTTPStatus.CONFLICT, {"error": "replay_rejected"}
+            self.store.record_watch_rate_event(device_hash, rate_bucket, batch_id, now)
             installation_hash = keyed_hash(
                 self.config.watch_identifier_key,
                 f"installation|{batch['installation_id']}",
@@ -776,7 +1072,20 @@ class DashboardApp:
             return HTTPStatus.CONFLICT if code in conflict_codes else HTTPStatus.BAD_REQUEST, {"error": code}
 
     def request_live_heart(self) -> dict[str, Any]:
-        return self.store.request_live_heart(utc_now(), lease_seconds=20)
+        if not self.config.watch_live_polling_enabled:
+            try:
+                demand = self.store.clear_live_heart_demand(utc_now())
+                return {"skipped": True, "reason": "watch_live_polling_disabled", **demand}
+            except sqlite3.OperationalError as exc:
+                if "locked" in str(exc).lower():
+                    return {"skipped": True, "reason": "database_locked"}
+                raise
+        try:
+            return self.store.request_live_heart(utc_now(), lease_seconds=20)
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                return {"skipped": True, "reason": "database_locked"}
+            raise
 
     def poll_live_heart_demand(
         self,
@@ -801,6 +1110,16 @@ class DashboardApp:
             now,
         ):
             return HTTPStatus.UNAUTHORIZED, {"error": "invalid_device_authentication"}
+
+        if not self.config.watch_live_polling_enabled:
+            demand = self.store.clear_live_heart_demand(now)
+            return HTTPStatus.OK, {
+                "revision": int(demand["revision"]),
+                "live_requested": False,
+                "lease_seconds": 0,
+                "requested_until": demand["requested_until_utc"],
+                "disabled": True,
+            }
 
         deadline = threading.Event()
         for _ in range(50):
@@ -857,6 +1176,9 @@ class DashboardApp:
             except json.JSONDecodeError:
                 run["metadata"] = {}
 
+        last_run = runs[0] if runs else None
+        has_stored_data = latest is not None or bool(history.get("count"))
+
         return {
             "generated_at": iso_utc(now),
             "range": {
@@ -894,10 +1216,11 @@ class DashboardApp:
             "table": [reading.public_dict() for reading in reversed(readings[-200:])],
             "gaps": _gaps(readings),
             "collector": {
-                "last_run": runs[0] if runs else None,
+                "last_run": last_run,
                 "runs": runs,
                 "poll_interval_seconds": self.config.min_poll_interval_seconds,
             },
+            "sync": _sync_status(last_run, has_stored_data=has_stored_data),
             "provenance": latest.provenance.public_dict() if latest else None,
             "settings": {
                 "decision_support_threshold_mg_dl": self.config.glucose_threshold_mg_dl,
@@ -926,6 +1249,13 @@ class DashboardApp:
             self.config.near_threshold_margin_mg_dl,
         )
         stream_status = _glucose_stream_status(latest_glucose, freshness)
+        last_run = self.store.last_collector_run()
+        if last_run is not None:
+            metadata = last_run.pop("metadata_json", "{}")
+            try:
+                last_run["metadata"] = json.loads(metadata)
+            except json.JSONDecodeError:
+                last_run["metadata"] = {}
 
         latest_heart = next(
             (
@@ -943,8 +1273,36 @@ class DashboardApp:
             heart_last_at = heart_payload["observation_recency"].get("event_at")
 
         last_upload = self.store.latest_watch_sync()
+        galaxy_adapters = GALAXY_SOURCE_ADAPTERS
+        fitbit_adapters = FITBIT_SOURCE_ADAPTERS
+        galaxy_latest, galaxy_observations = self._latest_watch_source_payload(galaxy_adapters, now)
+        fitbit_latest, fitbit_observations = self._latest_watch_source_payload(fitbit_adapters, now)
+        fitbit_last_run = self.store.last_collector_run("google_health_fitbit")
+        fitbit_last_run_for_summary = None if _has_fitbit_phone_data(fitbit_observations) else fitbit_last_run
+        fitbit_stale_after_seconds = max(1800, int(self.config.google_health_sync_interval_seconds) * 2)
+        galaxy_configured = bool(
+            self.config.watch_enabled
+            and self.config.watch_device_id
+            and self.config.watch_device_secret
+            and self.config.watch_identifier_key
+        )
+        heart_sync = _heart_sync_status({"last_at": heart_last_at}, last_upload, now)
+        galaxy_source = self._watch_source_summary(
+            galaxy_observations,
+            configured=galaxy_configured,
+            now=now,
+            live=heart_sync["status"] == "current",
+        )
+        fitbit_source = self._watch_source_summary(
+            fitbit_observations,
+            configured=self.config.google_health_enabled or galaxy_configured,
+            now=now,
+            last_run=fitbit_last_run_for_summary,
+            stale_after_seconds=fitbit_stale_after_seconds,
+        )
         return {
             "generated_at": iso_utc(now),
+            "sync": _sync_status(last_run, has_stored_data=latest_glucose is not None),
             "current": {
                 "reading": latest_glucose.public_dict() if latest_glucose else None,
                 "freshness": freshness,
@@ -953,8 +1311,17 @@ class DashboardApp:
             },
             "watch": {
                 "latest": {"vitals.heart_rate": heart_payload} if heart_payload else {},
+                "latest_by_source": {
+                    "galaxy": galaxy_latest,
+                    "fitbit": fitbit_latest,
+                },
                 "direct_heart_rate": heart_payload,
-                "heart_rate_sync": _heart_sync_status({"last_at": heart_last_at}, last_upload, now),
+                "heart_rate_sync": heart_sync,
+                "sources": {
+                    "galaxy": galaxy_source,
+                    "fitbit": fitbit_source,
+                },
+                "fitbit_biofeedback": _fitbit_biofeedback_status(fitbit_source, fitbit_latest),
             },
         }
 
@@ -968,10 +1335,62 @@ class DashboardApp:
             if last_finished and (now - last_finished).total_seconds() < self.config.min_poll_interval_seconds:
                 return {
                     "status": "skipped",
-                    "message": "The collector already refreshed inside the minimum polling interval.",
+                    "source": "libre",
+                    "sources": ["libre"],
+                    "message": "LibreLinkUp already refreshed inside the minimum polling interval.",
                     "last_finished_at": iso_utc(last_finished),
                 }
-            return {"status": "ok", "results": self.collector.collect_once()}
+            return {
+                "status": "ok",
+                "source": "libre",
+                "sources": ["libre"],
+                "message": "LibreLinkUp refresh completed.",
+                "results": self.libre_collector.collect_once(),
+            }
+        finally:
+            self.refresh_lock.release()
+
+    def refresh_fitbit_current(self) -> dict[str, Any]:
+        if not self.refresh_lock.acquire(blocking=False):
+            return {"status": "busy", "source": "fitbit", "sources": ["fitbit"], "message": "A refresh is already running."}
+        try:
+            adapter = GoogleHealthAdapter(self.config)
+            result = adapter.collect_current(window_minutes=180)
+            stored = self.store.import_health_observations(result.observations)
+            first_error = result.errors[0] if result.errors else None
+            self.store.record_collector_run(
+                adapter=result.adapter,
+                started_at=result.started_at,
+                finished_at=result.finished_at,
+                status=result.status,
+                readings_seen=len(result.observations),
+                readings_inserted=stored["inserted"],
+                error_code=first_error.code if first_error else None,
+                error_message=first_error.message if first_error else None,
+                metadata=result.metadata,
+            )
+            refreshed_watch = self.watch_dashboard(utc_now(), _range_since("24h", utc_now()))
+            current_status = refreshed_watch["sources"]["fitbit"]
+            current_biofeedback = refreshed_watch["fitbit_biofeedback"]
+            status = result.status
+            message = (
+                "Fitbit currentness refresh completed."
+                if status == "ok"
+                else "Fitbit currentness refresh did not return current Google Health data."
+            )
+            return {
+                "status": status,
+                "source": "fitbit",
+                "sources": ["fitbit"],
+                "message": message,
+                "observations_seen": len(result.observations),
+                "observations_inserted": stored["inserted"],
+                "duplicates": stored["duplicates"],
+                "errors": [error.public_dict() for error in result.errors],
+                "metadata": result.metadata,
+                "current_source_status": current_status,
+                "current_biofeedback_status": current_biofeedback,
+            }
         finally:
             self.refresh_lock.release()
 
@@ -1185,10 +1604,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK, self.server.app.live_state())
             elif parsed.path == "/api/watch/history":
                 metric = query.get("metric", [""])[0]
+                source = query.get("source", [None])[0]
                 try:
-                    self._send_json(HTTPStatus.OK, self.server.app.watch_metric_history(metric, self._range_key(query)))
-                except ValueError:
-                    self._send_json(HTTPStatus.BAD_REQUEST, {"error": "unsupported_watch_metric"})
+                    self._send_json(HTTPStatus.OK, self.server.app.watch_metric_history(metric, self._range_key(query), source))
+                except ValueError as exc:
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc) or "unsupported_watch_metric"})
             elif parsed.path == "/api/export.csv":
                 range_key = self._range_key(query)
                 payload = self.server.app.csv_export(range_key)
@@ -1241,6 +1661,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         if self.headers.get("X-Personal-State-Token") != self.server.app.token:
             self._send_json(HTTPStatus.FORBIDDEN, {"error": "invalid_request_token"})
+            return
+        if parsed.path == "/api/fitbit/refresh":
+            try:
+                result = self.server.app.refresh_fitbit_current()
+                self._send_json(HTTPStatus.OK, result)
+            except Exception:
+                self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "fitbit_refresh_failed"})
             return
         if parsed.path != "/api/refresh":
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "not_found"})

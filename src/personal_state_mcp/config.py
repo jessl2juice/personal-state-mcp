@@ -70,9 +70,12 @@ class AppConfig:
     watch_device_secret: str | None = None
     watch_identifier_key: str | None = None
     watch_retention_days: int = 3650
+    watch_live_polling_enabled: bool = True
     google_health_enabled: bool = False
     google_health_sync_interval_seconds: int = 300
     google_health_recent_hours: int = 36
+    google_health_request_timeout_seconds: int = 12
+    google_health_collect_budget_seconds: int = 35
     watch_mcp_metrics: tuple[str, ...] = (
         "activity.steps",
         "activity.exercise_session",
@@ -109,13 +112,15 @@ def load_config() -> AppConfig:
             watch_identifier_key = watch_identifier_key or get_watch_identifier_key()
         except Exception:
             pass
+    google_health_enabled_env = os.environ.get("PERSONAL_STATE_GOOGLE_HEALTH_ENABLED")
     google_health_connected = False
-    try:
-        from .secrets import get_google_health_credentials
+    if google_health_enabled_env is None:
+        try:
+            from .secrets import get_google_health_credentials
 
-        google_health_connected = get_google_health_credentials() is not None
-    except Exception:
-        pass
+            google_health_connected = get_google_health_credentials() is not None
+        except Exception:
+            pass
     return AppConfig(
         db_path=db_path,
         host_id=os.environ.get("PERSONAL_STATE_MCP_HOST_ID", "default-local"),
@@ -140,9 +145,12 @@ def load_config() -> AppConfig:
         watch_device_secret=watch_device_secret,
         watch_identifier_key=watch_identifier_key,
         watch_retention_days=_int_env("PERSONAL_STATE_WATCH_RETENTION_DAYS", 3650),
+        watch_live_polling_enabled=_bool_env("PERSONAL_STATE_WATCH_LIVE_POLLING_ENABLED", True),
         google_health_enabled=_bool_env("PERSONAL_STATE_GOOGLE_HEALTH_ENABLED", google_health_connected),
         google_health_sync_interval_seconds=_int_env("PERSONAL_STATE_GOOGLE_HEALTH_SYNC_SECONDS", 300),
         google_health_recent_hours=_int_env("PERSONAL_STATE_GOOGLE_HEALTH_RECENT_HOURS", 36),
+        google_health_request_timeout_seconds=_int_env("PERSONAL_STATE_GOOGLE_HEALTH_REQUEST_TIMEOUT_SECONDS", 12),
+        google_health_collect_budget_seconds=_int_env("PERSONAL_STATE_GOOGLE_HEALTH_COLLECT_BUDGET_SECONDS", 35),
         watch_mcp_metrics=_csv_env(
             "PERSONAL_STATE_WATCH_MCP_METRICS",
             (
