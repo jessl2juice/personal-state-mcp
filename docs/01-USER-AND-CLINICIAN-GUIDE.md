@@ -117,7 +117,7 @@ User story: As a cardiologist, I need heart-rate history, count, range, average,
 Suggested review:
 
 1. Confirm heart-rate source, timestamps, sample count, and coverage.
-2. Distinguish live direct-watch data from Samsung Health historical records.
+2. Distinguish live direct Fitbit or Galaxy data from synchronized Fitbit, Google Health, Health Connect, and Samsung Health historical records.
 3. Inspect visible gaps before interpreting line shape.
 4. Use raw table values or CSV for exact measurements; do not read exact values from the smoothed display curve.
 5. Confirm clinically significant events with an appropriate medical record or diagnostic device.

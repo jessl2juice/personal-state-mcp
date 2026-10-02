@@ -1,7 +1,7 @@
 # Personal State Validation, Release, and Governance
 
 Document version: 1.0  
-Last verified: 2026-09-29
+Last verified: 2026-10-02
 Intended readers: maintainers, reviewers, and release operators
 
 ## Governance principles
@@ -45,6 +45,7 @@ The detailed findings and resolutions remain in the engineering review documents
 - Private dashboard and CSV exports.
 - Signed watch ingest and Health Connect storage.
 - Read-only Google Health OAuth, recent synchronization, and historical backfill.
+- Direct Fitbit Bluetooth heart-rate ingest for Casey realtime biofeedback.
 - Google Fit and LibreView historical imports with backup and deduplication.
 - Host allowlisting, rate limiting, audit records, and safety envelopes.
 
@@ -56,6 +57,7 @@ The detailed findings and resolutions remain in the engineering review documents
 - Wear OS message and Data Item reception.
 - Timestamp deduplication of direct heart-rate transport.
 - Full authorized Health Connect history and optional licensed Samsung Health Data reads.
+- Fitbit BLE heart-rate receiver and signed upload path.
 
 ### Watch companion 0.4.2
 
@@ -130,6 +132,8 @@ Tests use synthetic data. Instrumented connected-device tests must not run again
 - The same verification passes after USB and debugger disconnection.
 - Screen-off and ordinary movement do not permanently stop the stream.
 - A forced or naturally occurring 45-second stream stall recovers without reinstalling the application.
+- Fitbit Air direct BLE heart rate stays live during a representative Casey field session without Galaxy fallback.
+- Source disagreement is shown as a confidence conflict, not hidden by a fixed source hierarchy.
 
 ## Release checklist
 
@@ -165,6 +169,7 @@ The following changes require explicit user approval and a focused security/safe
 - Personal State is not an alert or emergency system.
 - The dashboard is not an EHR and has no clinical attestation workflow.
 - Consumer devices may have measurement error, delay, and missingness.
+- Fitbit Air direct BLE heart rate is promising but still needs longer field validation for reconnect, battery, and outdoor/gym behavior.
 - Samsung Health does not export every Watch5 Pro metric to Health Connect.
 - Samsung stress, resting heart rate, HRV, skin temperature, floors, and active-time summary are unavailable unless a separately reviewed adapter supplies them.
 - The current Windows production tasks depend on a signed-in interactive session.

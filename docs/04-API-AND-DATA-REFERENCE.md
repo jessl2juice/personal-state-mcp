@@ -1,7 +1,7 @@
 # Personal State API and Data Reference
 
 Document version: 1.0  
-Last verified: 2026-09-29
+Last verified: 2026-10-02
 Intended readers: integration developers, agent developers, data reviewers, and operators
 
 ## General response principles
@@ -51,7 +51,7 @@ Only fresh or recent glucose can produce below, near, or above. The tool does no
 
 ### `health.current_state()`
 
-Returns a compact conversational summary. It includes current glucose context and an allowlisted watch summary when available. The exact watch fields are constrained by user configuration and do not expose every collected category.
+Returns a compact conversational summary. It includes current glucose context and an allowlisted wearable summary when available. The exact wearable fields are constrained by user configuration and do not expose every collected category.
 
 ### `health.watch()`
 
@@ -63,8 +63,9 @@ Returns an agent-authorized Galaxy, Samsung Health, Fitbit, and Google Health we
 - last companion upload metadata.
 - permission and availability state.
 - source-sync limitations.
+- Casey biofeedback context for direct Fitbit heart rate when available, including source id, age, and whether the estimate is usable, trend-only, conflicted, or stale.
 
-### `health.watch_recent(metric, hours=24, limit=200, cursor=None)`
+### `health.watch_recent(metric, hours=24, limit=200, cursor=None, source=None)`
 
 Returns paged history for one explicitly authorized metric. Policy:
 
@@ -72,6 +73,7 @@ Returns paged history for one explicitly authorized metric. Policy:
 - `limit`: 1 through 200.
 - `metric`: must be in the agent exposure allowlist.
 - `cursor`: server-issued, HMAC-protected, policy-bound, and short-lived.
+- `source`: optional source filter such as `fitbit_ble_heart_rate`, `google_health_sync`, `health_connect_history`, `galaxy_direct_live`, `samsung_health_history`, or aggregate aliases `fitbit` and `galaxy`.
 
 Invalid or unauthorized requests fail closed with structured errors.
 
@@ -266,7 +268,7 @@ Recency is metric-specific. Completed events such as sleep and exercise use neut
 ### Fitbit and Google Health observations
 
 - They retain provider measurement time, Personal State receipt time, age, source device evidence, and synchronization limitations.
-- They are classified as recent or latest recorded, never as the direct-watch live stream.
+- They are classified as recent or latest recorded, never as a direct-live stream.
 - Exact Fitbit Air attribution requires both Fitbit platform evidence and a matching Air device name; otherwise attribution remains external or unknown.
 
 ## Threshold rules

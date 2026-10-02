@@ -13,13 +13,13 @@ As the person whose data is shown, I need to identify glucose and heart rate imm
 ### Acceptance criteria
 
 - Current glucose and heart rate are separate, equally prominent values with units, measurement time, upload or receipt time, and age state.
-- The live heart-rate card shows a numeric value only when the direct watch sample is no more than ten seconds old. This covers the five-second watch delivery cadence without flicker. At eleven seconds it switches to `No live data`; the last known value remains in history.
+- The live heart-rate card shows a numeric value only when the newest direct Fitbit Bluetooth or Galaxy Watch sample is no more than ten seconds old. At eleven seconds it switches to `No live data`; the last known value remains in history.
 - The shared timeline uses separate labeled lanes and scales for glucose and heart rate.
 - Glucose and heart rate retain consistent, high-contrast colors everywhere.
 - The selected range and the coverage window for each stream are visible.
 - Day is the default view, with Week, Month, and Year available as stable display options.
 - Both sensors are always presented as one person's data on the same recorded-time axis.
-- If a recent companion upload does not contain current heart-rate samples, the dashboard calls it a heart-rate sync failure.
+- If a recent companion upload does not contain current heart-rate samples, the dashboard calls it a heart-rate currentness failure and names the affected source.
 - Hover details show both values only when they are within ten minutes of the selected point; otherwise the missing nearby measurement is explicit.
 - Missing data and stale data are never presented as normal physiology.
 
@@ -60,9 +60,9 @@ As a cardiologist, I need heart-rate history, count, range, average, capture dat
 
 - Heart rate uses bpm throughout and has a directly labeled, visually separate lane.
 - Heart-rate statistics are calculated from the full stored sample set, not the downsampled chart points.
-- The heart-rate source attribution and exact timestamps remain available in the detailed watch table.
+- The heart-rate source attribution and exact timestamps remain available in the detailed source table.
 - The display never compresses non-overlapping dates into apparent alignment.
-- Current heart-rate transfer failures are visually prominent and include the timestamp of the newest successfully transferred sample.
+- Current heart-rate transfer failures are visually prominent, source-specific, and include the timestamp of the newest successfully transferred sample.
 - A heart-rate sample older than ten seconds is never presented in the current-vital position.
 
 ## Shared clinical handoff

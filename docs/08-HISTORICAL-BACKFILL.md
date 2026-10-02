@@ -72,7 +72,7 @@ personal-state google-health-sync --hours 36
 personal-state google-health-backfill --days 365
 ```
 
-The backfill command queries in bounded windows and deduplicates overlap. Provider synchronization still controls what Google Health can return. These records retain measurement and receipt timing and are never labeled as direct-watch live data.
+The backfill command queries in bounded windows and deduplicates overlap. Provider synchronization still controls what Google Health can return. These records retain measurement and receipt timing and are never labeled as direct-live data.
 
 ## Search The Rest Of Google Takeout
 

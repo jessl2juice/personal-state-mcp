@@ -2,7 +2,7 @@
 
 Document version: 0.3
 Date: 2026-10-02
-Status: Direct Fitbit BLE realtime lane verified on phone; field range/run validation remains open
+Status: Direct Fitbit BLE realtime lane verified on phone; Casey state/confidence model documented; field range/run validation remains open
 
 ## Source Basis
 
@@ -120,7 +120,7 @@ Control planes:
 5. Manual refresh must have source-level intent and source-level result reporting.
 6. Disconnect must explicitly handle both credentials and local source data.
 7. Secret fallback may not silently reduce security.
-8. The Google/Fitbit pilot gate remains real-world Casey/Fitbit validation: Share heart rate is verified on the phone, and range, reconnect behavior, outdoor run cadence, battery impact, and cloud catch-up still need documented field evidence before claiming operational readiness.
+8. The Google/Fitbit pilot gate remains real-world Casey/Fitbit validation: Share heart rate is verified on the phone, a roughly 30-foot house-range live window was observed, and manual pulse supported Fitbit during a Galaxy conflict. Reconnect behavior, outdoor run cadence, battery impact, and cloud catch-up still need documented field evidence before claiming operational readiness.
 
 ## Current Design Strengths
 
@@ -489,14 +489,15 @@ Completed on 2026-10-01:
 - Added `WatchLivePollingEnabled` / `PERSONAL_STATE_WATCH_LIVE_POLLING_ENABLED`. When disabled, dashboard and MCP reads clear the live-heart demand lease instead of renewing it, and the phone live-demand poll returns `live_requested=false`. This lets the Galaxy Watch charge without being pulled by Personal State while Fitbit/Health Connect sync continues.
 - Fixed the PowerShell settings loader so boolean `$false` values are exported to the service environment instead of being skipped as empty values.
 - Reclassified the live Fitbit result honestly: Fitbit is synced and source-labeled, but the latest Fitbit heart-rate sample available through Health Connect was outside the Casey biofeedback currentness window. The dashboard now reports `fitbit_heart_rate_stale` instead of incorrectly blaming Google Health sync when phone-side Fitbit data exists.
-- Evaluated direct Fitbit reading options. Bluetooth/device-direct polling is not the recommended design path. The only supportable "direct" path is a cloud/API lane, either legacy Fitbit Web API endpoints or the Google Health successor surface. That lane needs its own source id, OAuth/token store, freshness rules, and UI panel before it can replace the phone Health Connect path.
+- Evaluated direct Fitbit reading options. The supportable realtime path is now `fitbit_ble_heart_rate`, using Fitbit Air's standard Bluetooth LE Heart Rate Service after Google Health Share heart-rate mode is enabled. A richer Fitbit-only cloud/API lane can still be evaluated separately as `fitbit_direct_cloud`, but it is context/history until measured cadence proves otherwise.
 
-Remaining before calling the app fully functional:
+Remaining before calling Casey Fitbit biofeedback operational:
 
-- The Fitbit/Casey biofeedback goal remains open. Fitbit data is now connected, syncing, source-labeled, and visible, but it is not yet current enough for Casey's intended realtime feedback use case.
+- The direct Fitbit BLE path is verified live on the phone and is the primary Casey realtime source. Longer field validation remains open for reconnect after range loss, outdoor/gym behavior, battery impact, and no-Galaxy fallback operation.
 - Add a first-class `fitbit_direct_cloud` design if direct cloud access is pursued. It must be separate from `fitbit_health_connect_phone` and `google_health_fitbit`, and must state provider cadence, API lifecycle risk, scopes, retention, disconnect behavior, and fallback ordering.
 - Do not rely on the Galaxy Watch as a production fallback for Casey. It can remain a separate source panel, but Casey's Fitbit path must stand alone.
 - Keep watch live polling disabled while the watch is charging or while evaluating Fitbit-only behavior.
+- Build Casey's state estimator from trends, deltas, persistence, source confidence, and conflict handling as documented in `docs/casey-fitbit-air-state-model.md`.
 
 ## Verification Status
 
@@ -531,19 +532,20 @@ Android command:
 .\scripts\verify_android_debug.ps1
 ```
 
-## Release Gate For Fitbit Air
+## Release Gate For Casey Fitbit Air
 
-Fitbit Air source display is connected and syncing. Fitbit Air is not yet ready to call realtime Casey biofeedback until all of these are true:
+Fitbit Air source display is connected, syncing, and direct BLE live heart rate has been verified on the phone. Do not call Casey Fitbit biofeedback operational until all of these are true:
 
 - OAuth consent and scopes are confirmed for the intended account.
 - One real-world run or comparable active session is pulled end-to-end without relying on the Galaxy Watch.
 - The dashboard displays the values with source, age, and synchronized wording.
-- Fitbit heart rate reaches the Casey biofeedback currentness window through a Fitbit-owned path, not a watch fallback.
+- Fitbit heart rate reaches the Casey biofeedback currentness window through `fitbit_ble_heart_rate`, not a watch fallback.
 - Libre near-real-time glucose still appears or fails independently with a clear source state.
 - Direct Galaxy live heart still appears only within the 10-second rule.
 - Google/Fitbit data is source-labeled as Fitbit Air only when Google supplies exact evidence.
 - Disconnect behavior is tested for credentials and local data.
 - No plaintext credential fallback is active in production behavior.
+- Casey reports conflicted/low-confidence physiology when Fitbit and Galaxy disagree materially unless a session-specific calibration event supports one source.
 - If direct Fitbit cloud access is added, the UI must distinguish `fitbit_direct_cloud`, `fitbit_health_connect_phone`, and `google_health_fitbit`; freshness/fallback ordering must be explicit.
 
 ## Field Log: 2026-10-01 Fitbit Air Live Test
@@ -552,7 +554,7 @@ Sanitized sequence of what was tried and learned:
 
 1. Google OAuth consent was completed for the Google Health scopes. The dashboard initially still showed Fitbit as not connected until server-side and phone-side paths were reconciled.
 2. The Android phone was connected with developer options, USB debugging, and wireless debugging available. ADB was used to inspect the phone app, confirm pairing and Health Connect grant state, bring the app forward, and tap `Sync now`.
-3. The Fitbit phone application was opened and refreshed so it could write recent device records into the phone ecosystem. Personal State cannot force the Fitbit device or Fitbit application to produce a current heart sample; it can only read what the authorized APIs expose.
+3. The Fitbit phone application was opened and refreshed so it could write recent device records into the phone ecosystem. Personal State cannot force the Fitbit device or Fitbit application to produce a current synchronized heart sample. For realtime Casey use, the phone must receive the standard Bluetooth Heart Rate Service after Fitbit Share heart-rate mode is enabled.
 4. The phone companion was already paired and retained its pairing. A debug APK reinstall attempt failed because the build signing identity did not match the installed production package, so the installed app was preserved rather than uninstalled.
 5. Foreground dashboard and Cloudflare tunnel sessions were used for diagnostics. Scheduled tasks were stopped during diagnostics and restored afterward.
 6. Phone sync first failed with HTTP 502. The server traceback showed `sqlite3.OperationalError: no such table: watch_ingest_rate_events`. The fix was a schema-current check and self-healing migration path for the additive rate-events table.
@@ -560,6 +562,7 @@ Sanitized sequence of what was tried and learned:
 8. Fitbit Health Connect records were present under the Fitbit source lane, but the newest Fitbit heart-rate record exposed to Personal State was stale relative to the Casey biofeedback window. This proved that synchronized Fitbit data alone is not sufficient for Casey realtime use.
 9. Direct Galaxy watch polling caused unacceptable battery drain during testing. `WatchLivePollingEnabled = $false` now turns off server-side live watch demand while preserving Fitbit and other phone Health Connect uploads.
 10. The dashboard source summary was corrected so existing phone Fitbit data is shown as synced/stale rather than blocked by a separate Google Health collector error.
+11. Direct Fitbit BLE later became live after Share heart rate was enabled. A subsequent Fitbit/Galaxy heart-rate disagreement was checked manually, and the manual pulse supported Fitbit over Galaxy for that moment. The design now treats source disagreement as a Casey confidence state rather than a reason to abandon the Fitbit deployment.
 
 ## Direct Fitbit Access Design Note
 

@@ -8,11 +8,13 @@ Intended readers: user and trusted operators
 
 Never make old data look live. Recovery is complete only when timestamps continue advancing under normal use. A single new reading after connecting USB, opening a debugger, or waking a device is not proof of a stable fix.
 
-For safety-sensitive questions, use the official Libre or Samsung application and established care guidance while troubleshooting Personal State.
+For safety-sensitive questions, use the official Libre, Fitbit, Samsung, or Google application and established care guidance while troubleshooting Personal State.
 
 ## Dashboard says `No live data` for heart rate
 
-This is the intended display when the newest direct heart-rate measurement is more than ten seconds old. The watch normally delivers every five seconds, so the card remains stable while still withholding data after two expected deliveries are missed.
+This is the intended display when the newest direct heart-rate measurement is more than ten seconds old. The Galaxy path normally delivers every five seconds and the Fitbit BLE path can deliver roughly once per second when sharing is active, so the card remains stable while still withholding data after direct samples stop.
+
+If Casey depends on Fitbit Air, troubleshoot Fitbit first. Galaxy may be displayed as a separate source, but it is not a hidden fallback for Casey's client deployment.
 
 ### User checks
 
@@ -111,13 +113,27 @@ This is a real data-currentness failure, not a UI failure. The phone or Google s
 
 1. Confirm the dashboard says Fitbit is synced and source-labeled.
 2. Confirm the biofeedback reason is `fitbit_heart_rate_stale`, not a Google Health connection error.
-3. Open the Fitbit phone app and complete a device sync.
-4. Keep the phone near the Fitbit with network access and background execution allowed.
-5. Run the Personal State phone companion `Sync now` again.
-6. Recheck `/api/live` or the dashboard Fitbit panel for source state and age.
-7. If Fitbit still does not expose a current heart sample, evaluate the direct Fitbit cloud/API lane rather than falling back to the Galaxy Watch.
+3. Confirm Google Health > Connections > Fitbit > Share heart rate is enabled and the Fitbit is in the mode that exposes the standard Heart Rate Service.
+4. Open the Personal State phone companion and start Fitbit live heart rate.
+5. Keep the phone near the Fitbit with Bluetooth, network access, and background execution allowed.
+6. If the receiver stopped after a range loss or Android interruption, restart it and confirm it rescans/reconnects.
+7. Run the Personal State phone companion `Sync now` only for synchronized context; this does not prove realtime biofeedback.
+8. Recheck `/api/live` or the dashboard Fitbit panel for source state and age.
+9. If Fitbit direct BLE still does not expose a current heart sample, evaluate the direct Fitbit cloud/API lane rather than falling back to the Galaxy Watch.
 
 Do not make Casey use Galaxy Watch heart rate as an invisible backup. If a fallback is ever shown, label it visibly and treat it as a different source.
+
+## Fitbit and Galaxy heart rates disagree
+
+Treat a large disagreement as a source-confidence event, not as a UI labeling problem.
+
+1. Confirm both values show source and age.
+2. Confirm both samples are truly direct and within the live window.
+3. Check obvious causes: loose fit, off-wrist state, movement, charging, power saving, or another active workout app.
+4. If a manual pulse check is performed, record it as a calibration event with time, source supported, and expiry. Do not store it as a permanent device ranking.
+5. Casey should mark the state `conflicted` or lower confidence until the conflict resolves.
+
+Do not blend the two values or let one source silently override the other.
 
 ## Turning off Galaxy Watch live polling
 

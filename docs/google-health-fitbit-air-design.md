@@ -7,6 +7,8 @@ Date: 2026-10-02
 
 Add Fitbit Air observations to Personal State so an authorized Casey agent can obtain a deeper, time-bounded picture of the user's physiological state. The adapter enriches the existing MCP tools; it does not create an alarm, diagnosis engine, treatment workflow, or competing source of truth.
 
+For Casey builder work, this document is subordinate to the operational state-estimator rules in [Casey Fitbit Air State Model](casey-fitbit-air-state-model.md). This design explains source ingestion; the Casey document explains how an agent may safely use the data.
+
 ## Source and timing model
 
 Fitbit Air data currently enters Personal State through two synchronized paths and one experimental realtime path:
@@ -21,6 +23,7 @@ Google Health and Health Connect records depend on the Fitbit mobile app or clou
 - Fitbit Bluetooth heart rate is live only while the newest measured sample is no more than ten seconds old;
 - Google Health heart rate is `recent_record` or `last_recorded`;
 - Fitbit Health Connect heart rate is synchronized phone history, not direct live data;
+- Fitbit BLE heart rate may be live, but only as source-labeled heart rate and only inside the ten-second currentness window;
 - every observation retains measurement, Google-update when available, Personal State receipt, and storage times;
 - absence or delay is unknown availability, never a normal physiological result.
 
@@ -70,6 +73,7 @@ Casey must:
 
 - state source, measurement time, and recency when relying on a value;
 - treat missing or stale data as unknown;
+- treat large Fitbit/Galaxy disagreement as a confidence conflict unless an explicit calibration event supports one source for that session;
 - avoid diagnosing why a user seems different;
 - avoid treatment, dosing, exercise, driving, nutrition, or emergency instructions;
 - defer device-specific notices to Fitbit, Samsung, Libre, and established care guidance.
@@ -116,7 +120,7 @@ Minimum design requirements:
 
 Synthetic tests cover read-only OAuth, exact and non-exact device attribution, canonical heart-rate normalization, Bluetooth heart-rate packet parsing, wearable-only reconciliation, Health Connect Fitbit attribution, partial failure behavior, collector persistence, MCP exposure, dashboard source panels, source-filtered metric history, and watch-polling disablement. Live validation on 2026-10-02 confirmed the phone can receive Fitbit Air standard BLE heart-rate samples after Share heart rate is enabled, upload them through the authenticated ingest host, and display them as `fitbit_ble_heart_rate` live data. Remaining field validation must confirm range, reconnect behavior, battery impact, and run behavior before treating the lane as operationally proven for Casey.
 
-2026-10-01 live validation status:
+Historical 2026-10-01 live validation status:
 
 - Phone companion pairing and Health Connect grants were intact.
 - Manual phone sync completed successfully after the server-side schema fix.
@@ -135,4 +139,4 @@ Synthetic tests cover read-only OAuth, exact and non-exact device attribution, c
 - Repaired the local receiver path: the local dashboard/ingest service was down and the Cloudflare tunnel returned HTTP 530 until the receiver and tunnel were restarted. After repair, the phone uploaded 3,376 Health Connect changes successfully.
 - Direct BLE field result: the phone scan saw hundreds of nearby BLE advertisements but zero Fitbit/heart-rate candidates because the Fitbit did not advertise a public name or Heart Rate Service UUID. The companion then connected directly to the bonded `Google Fitbit Air` LE device. GATT connection and service discovery succeeded, but the standard Heart Rate Measurement characteristic (`0x2A37`) under Heart Rate Service (`0x180D`) was not exposed to this third-party app. No `fitbit_ble_heart_rate` sample was captured.
 - Follow-up field result: after Google Health `Share heart rate` / `Always visible` was enabled, the phone companion subscribed to Heart Rate Measurement (`0x2A37`) and received about one sample per second from the bonded Fitbit Air. Upload initially failed because the dashboard process had not loaded `WatchIngestHosts`, then because the BLE payload included fields outside the v1 series contract. Restarting the dashboard through `scripts/start_dashboard.ps1` and sending contract-clean samples resolved the path.
-- Current conclusion: public standard BLE HR is verified on Casey's phone for live heart rate. The dashboard showed Fitbit Air `Live`, the live heart card showed Fitbit direct Bluetooth with a 0-second age, and Casey biofeedback reported `fitbit_ble_heart_rate_live`. The user then confirmed they had been about 30 feet away for roughly 10 minutes during the successful live window, which is strong house-range evidence. Afterward, the dashboard aged to 15+ minutes stale because the phone's Fitbit BLE foreground service had stopped and lacked an automatic reconnect loop. The companion now treats disconnect as a rescan/reconnect condition. Remaining validation work is longer field behavior: reconnect after actual range loss, battery impact, and outdoor run stability without Galaxy fallback.
+- Current conclusion: public standard BLE HR is verified on Casey's phone for live heart rate. The dashboard showed Fitbit Air `Live`, the live heart card showed Fitbit direct Bluetooth with a 0-second age, and Casey biofeedback reported `fitbit_ble_heart_rate_live`. The user then confirmed they had been about 30 feet away for roughly 10 minutes during the successful live window, which is strong house-range evidence. Afterward, the dashboard aged to 15+ minutes stale because the phone's Fitbit BLE foreground service had stopped and lacked an automatic reconnect loop. The companion now treats disconnect as a rescan/reconnect condition. Remaining validation work is longer field behavior: reconnect after actual range loss, battery impact, and outdoor run stability without Galaxy fallback. A later live disagreement between Fitbit and Galaxy was manually checked against pulse and supported Fitbit; Casey must therefore use source confidence and conflict handling, not a fixed assumption that Galaxy is more correct.

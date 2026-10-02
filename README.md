@@ -9,7 +9,7 @@ The primary use case is an authorized agent noticing that the user seems unusual
 - **New developer:** follow [Developer Quick Start](#developer-quick-start).
 - **Release installer user:** follow [Install a Packaged Release](#install-a-packaged-release).
 - **Operator:** read [Installation and Operations](docs/02-INSTALLATION-AND-OPERATIONS.md) and [Troubleshooting](docs/05-TROUBLESHOOTING-RUNBOOK.md).
-- **Agent or API developer:** read [API and Data Reference](docs/04-API-AND-DATA-REFERENCE.md).
+- **Agent or API developer:** read [Casey Fitbit Air State Model](docs/casey-fitbit-air-state-model.md), then [API and Data Reference](docs/04-API-AND-DATA-REFERENCE.md).
 - **Clinical reviewer:** read [User and Clinician Guide](docs/01-USER-AND-CLINICIAN-GUIDE.md).
 - **Security reviewer:** read [Architecture, Security, and Privacy](docs/03-ARCHITECTURE-SECURITY-PRIVACY.md).
 
@@ -22,9 +22,9 @@ Start with [Top-Level Design and Audit](docs/top-level-design-and-audit.md) when
 | --- | --- | --- |
 | FreeStyle Libre 3 Plus | Official Libre sharing -> dedicated LibreLinkUp follower -> Python adapter | Near real time when Abbott's follower service is current; stale readings are withheld from threshold context |
 | Galaxy Watch heart rate | Wear OS Health Services -> watch app -> phone relay -> authenticated ingest | Labeled live only while the measured sample is no more than 10 seconds old |
-| Samsung Health history | Samsung Health -> Health Connect or licensed Samsung Health Data SDK -> phone app -> authenticated ingest | Recorded history with source timestamps; never promoted to live without direct-watch evidence |
+| Samsung Health history | Samsung Health -> Health Connect or licensed Samsung Health Data SDK -> phone app -> authenticated ingest | Recorded history with source timestamps; never promoted to live without direct-source evidence |
 | Fitbit Bluetooth heart rate | Fitbit or compatible device -> Bluetooth LE Heart Rate Service -> Python BLE probe | Labeled live only while the measured sample is no more than 10 seconds old |
-| Fitbit Air / Google wearable | Fitbit app sync -> Google Health API v4 -> Python adapter | Synchronized records, never second-by-second live data |
+| Fitbit Air / Google wearable | Fitbit app sync -> Google Health API v4 -> Python adapter | Synchronized sleep, activity, recovery, and history; never direct live |
 | Google Fit and LibreView exports | User-owned archive -> explicit importer -> normalized SQLite history | Historical only, with original timestamps and provenance |
 
 Every public health response carries measurement time, receipt or synchronization time when available, storage time, age, freshness, provenance, and a safety boundary. Missing data remains missing; the system does not invent samples or infer normal physiology from absence.
@@ -203,7 +203,7 @@ Fitbit cloud data appears only after the Fitbit app synchronizes it to Google He
 
 ### Fitbit Direct Bluetooth Heart Rate
 
-The realtime Fitbit lane is separate from Google Health. It subscribes to the standard Bluetooth LE Heart Rate Service (`0x180D`) and stores live heart-rate samples with adapter id `fitbit_ble_heart_rate`. This path is heart-rate only; steps, sleep, HRV, oxygen, and recovery context still come from Google Health or Health Connect after phone/cloud synchronization.
+The realtime Fitbit lane is separate from Google Health. It subscribes to the standard Bluetooth LE Heart Rate Service (`0x180D`) and stores live heart-rate samples with adapter id `fitbit_ble_heart_rate`. This path is heart-rate only; steps, sleep, HRV, oxygen, and recovery context still come from Google Health or Health Connect after phone/cloud synchronization. Casey uses this lane as the primary realtime Fitbit path, with confidence and conflict rules described in [Casey Fitbit Air State Model](docs/casey-fitbit-air-state-model.md).
 
 Install the optional BLE runtime:
 
@@ -223,7 +223,7 @@ Stream and store live samples:
 .\.venv\Scripts\personal-state.exe fitbit-ble-probe --name Fitbit --seconds 300 --print-samples
 ```
 
-The database stores a hash of the Bluetooth identity, not the raw address. A Fitbit Bluetooth sample is labeled live only while it is no more than ten seconds old. This experimental lane may interfere with the Fitbit app's normal sync, so Google Health and Health Connect remain the source-of-record context lanes.
+The database stores a hash of the Bluetooth identity, not the raw address. A Fitbit Bluetooth sample is labeled live only while it is no more than ten seconds old. This lane may interfere with the Fitbit app's normal sync during a live Casey session; Google Health and Health Connect remain the sleep, activity, recovery, and historical context lanes.
 
 ### Galaxy Phone And Watch
 
@@ -453,7 +453,7 @@ Before calling a new machine ready:
 4. Libre collection succeeds only after the follower credential is stored.
 5. Google Health status reports only the scopes and device metadata actually authorized.
 6. Phone and watch APK signatures match before device installation.
-7. Direct watch sample, phone relay, server ingest, and dashboard timestamps advance without USB or debugger dependence.
+7. Direct live heart samples from each enabled direct source, phone relay, server ingest, and dashboard timestamps advance without USB or debugger dependence.
 8. The ingest hostname cannot serve the dashboard.
 9. No database, archive, OAuth JSON, pairing file, credential, tunnel token, signing key, proprietary AAR, screenshot, or real health payload is tracked by Git.
 
@@ -463,7 +463,7 @@ Before calling a new machine ready:
 - **PowerShell blocks a script:** use `powershell.exe -NoProfile -ExecutionPolicy Bypass -File <script>`; do not weaken the machine-wide policy.
 - **Keychain command fails:** reinstall with `.[keychain]` and confirm Windows Credential Manager is available for the signed-in user.
 - **Dashboard shows no data:** this is correct before a successful collection, import, or authenticated phone upload.
-- **Heart rate says no live data:** the newest direct watch sample is older than 10 seconds; follow the timestamp boundary checklist in the troubleshooting runbook.
+- **Heart rate says no live data:** the newest direct Fitbit or Galaxy heart sample is older than 10 seconds; follow the timestamp boundary checklist in the troubleshooting runbook.
 - **Fitbit is connected but empty:** sync the Fitbit phone app, then run `google-health-status` and `google-health-sync`.
 - **Gradle cannot find Android SDK:** install Platform 36 and set `ANDROID_HOME` or create the usual untracked `local.properties`.
 - **Watch does not relay:** verify matching package/signing identity, permissions, Data Layer connectivity, and a running live lease.
@@ -480,6 +480,7 @@ Before calling a new machine ready:
 ## Design And Review Record
 
 - [Top-level design and audit](docs/top-level-design-and-audit.md)
+- [Casey Fitbit Air state model](docs/casey-fitbit-air-state-model.md)
 - [Detailed design](docs/design.md)
 - [Galaxy Watch5 Pro design](docs/watch5-pro-design-addendum.md)
 - [Google Health / Fitbit Air design](docs/google-health-fitbit-air-design.md)

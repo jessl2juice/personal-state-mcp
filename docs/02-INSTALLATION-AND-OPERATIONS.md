@@ -1,7 +1,7 @@
 # Personal State Installation and Operations Guide
 
 Document version: 1.0  
-Last verified: 2026-09-29
+Last verified: 2026-10-02
 Intended readers: trusted installers and operators
 
 ## Supported production-pilot topology
@@ -10,7 +10,7 @@ Intended readers: trusted installers and operators
 - FreeStyle Libre 3 Plus shared to a dedicated LibreLinkUp follower account.
 - Android phone companion 0.4.2 or later.
 - Galaxy Watch companion 0.4.2 or later on a supported Wear OS watch.
-- Optional Fitbit or Google wearable connected through the read-only Google Health API.
+- Optional Fitbit Air connected through direct Bluetooth heart rate, Health Connect, and the read-only Google Health API.
 - Private dashboard protected by Cloudflare Access.
 - Separate authenticated ingest hostname and policy for the phone companion.
 
@@ -89,7 +89,20 @@ The Libre-compatible interface is unofficial and may change. Keep the official L
 6. Run `personal-state google-health-sync --hours 36`.
 7. Set `GoogleHealthEnabled = $true` in the non-secret settings file for scheduled collection.
 
-OAuth client secret and refresh token material is stored in the OS credential store. Google Health observations are synchronized records and never receive the direct-watch live label. Fitbit data may remain absent until the Fitbit phone application completes its own synchronization.
+OAuth client secret and refresh token material is stored in the OS credential store. Google Health observations are synchronized records and never receive a direct-live label. Fitbit data may remain absent until the Fitbit phone application completes its own synchronization.
+
+## Fitbit direct heart-rate activation
+
+Use this path for Casey realtime Fitbit biofeedback.
+
+1. Pair the Fitbit Air normally with the phone.
+2. In Google Health, open Connections, select Fitbit, enable Share heart rate, and keep the device in the sharing mode required for standard equipment/app connections.
+3. Open the Personal State phone companion and start Fitbit live heart rate.
+4. Confirm the dashboard shows `fitbit_ble_heart_rate` or `Fitbit direct Bluetooth` as live with age no more than ten seconds.
+5. Confirm source-labeled Fitbit synchronized context still appears separately for sleep, activity, recovery, and history.
+6. Observe reconnect behavior after range loss before declaring Casey field use ready.
+
+Do not use Galaxy Watch as a hidden fallback for Casey's Fitbit deployment. If Galaxy is enabled, display it as a separate source with its own recency and confidence.
 
 ## Phone companion activation
 
@@ -146,7 +159,7 @@ The private tunnel token is protected with Windows DPAPI and stored outside the 
 - Confirm the dashboard opens through Access.
 - Confirm glucose age and heart-rate age are plausible.
 - Confirm a live heart-rate number is shown only when age is ten seconds or less.
-- Confirm the watch notification remains present when monitoring is intended.
+- Confirm the Fitbit live receiver or watch notification remains present when that direct source is intended.
 
 ### Weekly
 

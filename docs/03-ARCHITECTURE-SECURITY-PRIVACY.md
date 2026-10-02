@@ -53,6 +53,19 @@ Galaxy Watch Health Services
 
 The direct path requests heart rate only, disables GPS, uses five-second screen-off batching, relays at most once every second, and automatically recovers its own stalled exercise stream after 45 seconds.
 
+### Fitbit direct heart rate
+
+```text
+Fitbit Air in Google Health Share heart-rate mode
+  -> standard Bluetooth LE Heart Rate Service
+  -> Personal State phone companion foreground receiver
+  -> signed private ingest request
+  -> SQLite history and compact live endpoint
+  -> dashboard and Casey state estimator
+```
+
+This path is heart-rate only. It is labeled live only while the newest measured sample is no more than ten seconds old. Sleep, activity, recovery, and longer Fitbit context remain synchronized history through Health Connect or Google Health.
+
 ### Fitbit and Google Health
 
 ```text
@@ -69,7 +82,7 @@ The adapter uses read-only activity, health-metric, and sleep scopes. Provider s
 
 ### Adapter boundary
 
-Vendor adapters emit normalized observations rather than exposing vendor response shapes. Current adapters are Libre-compatible glucose, Android Health Connect, direct watch heart rate, optional Samsung Health Data SDK records, and Google Health wearable records. Every adapter preserves the same time, provenance, freshness, attribution, and safety contracts.
+Vendor adapters emit normalized observations rather than exposing vendor response shapes. Current adapters are Libre-compatible glucose, Android Health Connect, direct Fitbit Bluetooth heart rate, direct watch heart rate, optional Samsung Health Data SDK records, and Google Health wearable records. Every adapter preserves the same time, provenance, freshness, attribution, and safety contracts.
 
 ### Collector
 
@@ -122,7 +135,7 @@ Dashboard and ingest credentials are intentionally not interchangeable.
 ## Freshness and non-deception controls
 
 - Glucose freshness is based on measurement and receipt times.
-- Live heart rate is numeric only within ten seconds of measurement, covering the five-second watch cadence without flicker.
+- Live heart rate is numeric only within ten seconds of direct Fitbit or Galaxy measurement.
 - Old heart-rate values remain historical and cannot appear as current.
 - Dashboard curves break after a one-minute heart-rate gap.
 - Smoothed drawing never changes persisted or exported values.
@@ -151,7 +164,7 @@ These controls are designed to prevent technically available but old data from l
 | Cross-surface privilege | Dashboard and ingest host isolation; ingest host serves health check and ingest only |
 | Payload abuse | 1 MiB body limit, strict JSON parser, closed metric and unit allowlists, depth and count limits, transactional insert |
 | Excess collection | Read-only permissions, user-selected categories, no routes or raw sensor streams |
-| Misleading current state | Ten-second live-heart cutoff for the five-second watch cadence, explicit ages, visible gaps, stale gating |
+| Misleading current state | Ten-second live-heart cutoff for direct sources, explicit ages, visible gaps, stale gating, source-conflict handling |
 | Local database disclosure | Current-user ACLs, expected full-disk encryption, protected backups, no raw credentials |
 | Agent overreach | Read-only MCP annotations, host allowlist, metric exposure allowlist, audit, no configuration tools |
 

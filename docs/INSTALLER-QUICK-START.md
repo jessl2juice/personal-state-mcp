@@ -8,7 +8,7 @@ Personal State gives you a private physiological history dashboard and a read-on
 - a background LibreLinkUp collector;
 - long-term SQLite history stored under your Windows profile;
 - the `health.*` MCP tools;
-- an optional paired phone and Wear OS watch companion.
+- an optional paired phone, Fitbit direct heart-rate receiver, and Wear OS watch companion.
 
 Personal State is not an alarm system, diagnosis system, treatment recommender, or medical device. Keep Libre and device safety alerts enabled.
 
@@ -19,7 +19,7 @@ You need:
 - Windows 10 or 11;
 - 64-bit Python 3.12; setup can install it through Windows Package Manager when it is missing;
 - a dedicated LibreLinkUp follower account that has accepted the sensor owner's invitation;
-- for watch data, an Android phone, a paired Wear OS watch, and temporary developer access during companion installation.
+- for Fitbit or watch data, an Android phone, supported wearable permissions, and temporary developer access during companion installation.
 
 Do not use the sensor owner's primary Libre account as the follower account.
 
@@ -91,5 +91,5 @@ After installation:
 1. The dashboard opens at `http://127.0.0.1:8766/`.
 2. Glucose shows a measurement time, received time, age, freshness, and provenance.
 3. The official Libre app remains responsible for alerts.
-4. Heart rate appears in the live position only when the direct watch sample is no more than ten seconds old, covering the five-second watch cadence without flicker.
-5. Old or missing watch data is labeled clearly and never presented as live.
+4. Heart rate appears in the live position only when the newest direct Fitbit or Galaxy sample is no more than ten seconds old.
+5. Old, missing, or synchronized wearable data is labeled clearly and never presented as live.
