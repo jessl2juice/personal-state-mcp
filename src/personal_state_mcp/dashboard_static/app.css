@@ -130,6 +130,19 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-lineca
 .current-glucose.is-unavailable .reading-value > span:first-child { font-size: 24px; line-height: 1.15; }
 .current-heart { border-left: 5px solid var(--heart); background: #fff8f8; color: var(--heart); }
 .current-heart.is-unavailable { color: var(--muted); background: #f8fafc; }
+.current-heart.has-heart-mismatch { border-color: #e9c774; border-left-color: var(--gold); background: #fffaf0; }
+.heart-source-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin-top: 10px; color: var(--ink); }
+.heart-source-row { display: grid; min-width: 0; min-height: 70px; grid-template-rows: auto auto auto; border: 1px solid #f1c7c3; border-radius: 8px; padding: 8px 9px; background: rgba(255,255,255,.72); }
+.heart-source-row.has-heart-mismatch { border-color: #e9c774; background: white; box-shadow: inset 0 -3px 0 #e9c774; }
+.heart-source-row.is-live { border-color: #dd8b85; background: white; color: var(--heart); box-shadow: inset 0 -3px 0 var(--heart); }
+.heart-source-row.is-live.has-heart-mismatch { border-color: #e9c774; box-shadow: inset 0 -3px 0 #e9c774; }
+.heart-source-row.is-stale { border-color: #e9c774; background: #fffaf0; color: var(--gold); box-shadow: inset 0 -3px 0 #e9c774; }
+.heart-source-row.is-missing { border-color: var(--line); background: #f8fafc; color: var(--muted); }
+.heart-source-name { overflow: hidden; color: var(--muted); font-size: 9px; font-weight: 800; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.heart-source-value { display: flex; min-width: 0; align-items: baseline; gap: 5px; margin-top: 3px; color: currentColor; font-variant-numeric: tabular-nums; }
+.heart-source-value strong { min-width: 0; overflow-wrap: anywhere; font-family: "Google Sans", Roboto, Arial, sans-serif; font-size: 25px; font-weight: 650; line-height: 1; }
+.heart-source-value small { color: var(--muted); font-size: 9px; font-weight: 800; }
+.heart-source-meta { min-width: 0; margin-top: 6px; overflow: hidden; color: var(--muted); font-size: 8px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
 .vital-topline { display: flex; align-items: center; gap: 9px; }
 .vital-icon { display: grid; width: 34px; height: 34px; flex: 0 0 34px; place-items: center; border-radius: 7px; background: currentColor; }
 .vital-icon svg { width: 18px; height: 18px; color: white; }
@@ -439,6 +452,10 @@ tbody tr:hover { background: var(--surface-container-low); }
   .reading-value > span:first-child { font-size: 36px; }
   .reading-value .unit { font-size: 10px; }
   .current-reading > p { font-size: 8px; }
+  .heart-source-grid { grid-template-columns: 1fr; gap: 6px; }
+  .heart-source-row { min-height: 58px; padding: 7px 8px; }
+  .heart-source-value strong { font-size: 22px; }
+  .heart-source-meta { margin-top: 4px; }
   .fitbit-air-heading, .galaxy-watch-heading { align-items: flex-start; flex-direction: column; gap: 9px; }
   .source-panel-actions { width: 100%; justify-content: space-between; }
   .fitbit-air-grid, .galaxy-watch-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }

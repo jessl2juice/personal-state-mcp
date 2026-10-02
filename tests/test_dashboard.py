@@ -572,11 +572,16 @@ def test_dashboard_places_all_current_signals_before_history_charts() -> None:
     assert 'id="source-fitbit-status"' in html
     assert 'id="fitbit-refresh-button"' in html
     assert 'id="fitbit-biofeedback-status"' in html
+    assert 'id="current-heart-fitbit-value"' in html
+    assert 'id="current-heart-watch-value"' in html
+    assert 'aria-label="Heart rate by source"' in html
 
     javascript = (static_dir / "app.js").read_text(encoding="utf-8")
     assert 'streamStatus === "stopped"' in javascript
     assert "const glucoseSource = reading ? adapterLabel(reading) : \"LibreLinkUp follower\"" in javascript
-    assert "heartSource" in javascript
+    assert "renderHeartSource" in javascript
+    assert "Source mismatch" in javascript
+    assert "heartDelta >= 10" in javascript
     assert "· measured" in javascript
     assert 'source === "Fitbit Air via Google Health"' in javascript
     assert 'source === "libre_linkup_follower"' in javascript

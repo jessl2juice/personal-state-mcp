@@ -252,6 +252,59 @@
     setText("#rail-updated", "Stored history is still visible; current live refresh is degraded.");
   }
 
+  function heartAgeSeconds(observation) {
+    const ageSeconds = Number(observation?.observation_recency?.measurement_age_seconds);
+    return Number.isFinite(ageSeconds) ? ageSeconds : null;
+  }
+
+  function heartIsLive(observation) {
+    const ageSeconds = heartAgeSeconds(observation);
+    return Boolean(observation)
+      && observation.observation_recency?.status === "live"
+      && ageSeconds !== null
+      && ageSeconds <= HEART_LIVE_MAX_AGE_SECONDS;
+  }
+
+  function heartValue(observation) {
+    const payload = observation?.payload || {};
+    const samples = Array.isArray(payload.samples) ? payload.samples : [];
+    const value = samples.length ? samples[samples.length - 1].value : payload.value;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function sourceHeartObservation(watch, sourceKey, directHeart) {
+    const adapter = directHeart?.provenance?.adapter;
+    if (sourceKey === "fitbit" && adapter === "fitbit_ble_heart_rate") return directHeart;
+    if (sourceKey === "watch" && adapter === "wear_health_services") return directHeart;
+    const sourceBucket = sourceKey === "watch" ? "galaxy" : sourceKey;
+    return watch?.latest_by_source?.[sourceBucket]?.["vitals.heart_rate"] || null;
+  }
+
+  function renderHeartSource(sourceKey, label, observation) {
+    const row = $(`#current-heart-${sourceKey}-row`);
+    const hasObservation = Boolean(observation);
+    const live = heartIsLive(observation);
+    const ageSeconds = heartAgeSeconds(observation);
+    const presentation = watchMetricPresentation("vitals.heart_rate", observation);
+    const source = hasObservation ? adapterLabel(observation) : label;
+    const age = ageSeconds === null ? "Age unavailable" : formatAge(ageSeconds);
+
+    if (row) {
+      row.classList.toggle("is-live", live);
+      row.classList.toggle("is-stale", hasObservation && !live);
+      row.classList.toggle("is-missing", !hasObservation);
+    }
+    setText(`#current-heart-${sourceKey}-value`, hasObservation ? presentation.value : "--");
+    setText(`#current-heart-${sourceKey}-unit`, hasObservation && presentation.unit ? presentation.unit : "");
+    setText(`#current-heart-${sourceKey}-time`, live
+      ? `Live · ${age} · ${source}`
+      : hasObservation
+        ? `${age} · ${source} · ${formatDate(heartSampleTime(observation))}`
+        : `No ${label} heart rate`);
+    return { label, observation, hasObservation, live, ageSeconds, age, presentation, source, value: heartValue(observation) };
+  }
+
   function renderCurrent(payload) {
     const { reading, freshness, threshold_context: threshold, stream = {} } = payload.current;
     const streamStatus = stream.status || (freshness.status === "fresh" ? "current" : freshness.status === "recent" ? "delayed" : reading ? "stopped" : "unavailable");
@@ -299,17 +352,22 @@
     setText("#context-title", titles[threshold.state] || "Current context unavailable");
     setText("#context-copy", threshold.message || "The official Libre app and sensor remain the safety alert layer.");
 
-    const heart = payload.watch?.direct_heart_rate || payload.watch?.latest?.["vitals.heart_rate"];
-    const heartRecency = heart?.observation_recency || {};
+    const watchPayload = payload.watch || {};
+    const directHeart = payload.watch?.direct_heart_rate;
     const heartSync = payload.watch?.heart_rate_sync || {};
-    const heartStatus = heartRecency.status === "old" ? "stale" : heartRecency.status;
-    const heartPresentation = watchMetricPresentation("vitals.heart_rate", heart);
-    const heartSource = adapterLabel(heart);
-    const heartAgeSeconds = Number(heartRecency.measurement_age_seconds);
-    const heartIsCurrent = Boolean(heart)
-      && heartSync.status === "current"
-      && Number.isFinite(heartAgeSeconds)
-      && heartAgeSeconds <= HEART_LIVE_MAX_AGE_SECONDS;
+    const fitbitHeart = sourceHeartObservation(watchPayload, "fitbit", directHeart);
+    const watchHeart = sourceHeartObservation(watchPayload, "watch", directHeart);
+    const fitbitState = renderHeartSource("fitbit", "Fitbit Air", fitbitHeart);
+    const watchState = renderHeartSource("watch", "Galaxy Watch", watchHeart);
+    const heartStates = [fitbitState, watchState];
+    const liveHeartStates = heartStates.filter((source) => source.live);
+    const recordedHeartStates = heartStates.filter((source) => source.hasObservation);
+    const heartIsCurrent = liveHeartStates.length > 0;
+    const comparedHeartStates = heartStates.filter((source) => source.value !== null);
+    const heartDelta = comparedHeartStates.length === 2
+      ? Math.abs(comparedHeartStates[0].value - comparedHeartStates[1].value)
+      : null;
+    const heartMismatch = heartDelta !== null && heartDelta >= 10;
     const heartCard = $("#current-heart-card");
     const heartRepairAction = $("#heart-repair-action");
     if (state.heartCutoffTimer) {
@@ -317,18 +375,21 @@
       state.heartCutoffTimer = null;
     }
     heartCard.classList.toggle("is-unavailable", !heartIsCurrent);
+    heartCard.classList.toggle("has-heart-mismatch", heartMismatch);
+    heartStates.forEach((source) => {
+      const row = source.label === "Fitbit Air" ? $("#current-heart-fitbit-row") : $("#current-heart-watch-row");
+      if (row) row.classList.toggle("has-heart-mismatch", heartMismatch);
+    });
     heartRepairAction.hidden = heartIsCurrent;
-    setStatusClass($("#heart-freshness-dot"), heartIsCurrent ? heartStatus : "error");
-    setText("#heart-freshness-label", heartIsCurrent
-      ? `Live · ${formatAge(heartRecency.measurement_age_seconds)}`
+    setStatusClass($("#heart-freshness-dot"), heartIsCurrent ? "fresh" : "error");
+    setText("#heart-freshness-label", heartMismatch
+      ? `Source mismatch · ${Math.round(heartDelta)} bpm apart`
+      : heartIsCurrent
+        ? liveHeartStates.length === 2 ? "Both sources live" : `${liveHeartStates[0].label} live`
       : heartSync.status === "failure" ? "Sync failed · no live heart rate" : "No live heart-rate data");
-    setText("#current-heart-value", heartIsCurrent ? heartPresentation.value : "No live data");
-    setText("#current-heart-unit", heartIsCurrent ? "bpm" : "");
-    setText("#current-heart-time", heartIsCurrent
-      ? `${heartSource} · measured ${formatDate(heartSampleTime(heart))} · uploaded ${formatDate(heart.ingested_at_server)}`
-      : heart
-        ? `Historical only: ${heartPresentation.value} bpm recorded ${formatDate(heartSampleTime(heart))} · ${heartSource} · ${formatAge(heartRecency.measurement_age_seconds)}`
-        : "No heart-rate sample has been received");
+    setText("#current-heart-time", recordedHeartStates.length
+      ? `${heartMismatch ? `Difference ${Math.round(heartDelta)} bpm · ` : ""}${recordedHeartStates.map((source) => `${source.label}: ${source.presentation.value} ${source.presentation.unit || "bpm"} · ${source.live ? "live" : source.age}`).join(" · ")}`
+      : "No heart-rate sample has been received");
 
     if (!glucoseIsCurrent) {
       setText("#rail-status", streamStatus === "delayed" ? "Glucose update delayed" : "Glucose stream stopped");
@@ -342,17 +403,9 @@
       setText("#rail-status", freshnessLabel);
       setStatusClass($("#rail-status-dot"), "fresh");
       setText("#rail-updated", `Glucose measured ${formatTime(reading.measured_at)}`);
-      const cutoffDelay = Math.max(0, HEART_LIVE_MAX_AGE_SECONDS - heartAgeSeconds) * 1000 + 50;
+      const oldestLiveAge = Math.max(...liveHeartStates.map((source) => source.ageSeconds));
+      const cutoffDelay = Math.max(0, HEART_LIVE_MAX_AGE_SECONDS - oldestLiveAge) * 1000 + 50;
       state.heartCutoffTimer = window.setTimeout(() => {
-        heartCard.classList.add("is-unavailable");
-        setStatusClass($("#heart-freshness-dot"), "error");
-        setText("#heart-freshness-label", "Failed · latest sample is over 10 seconds old");
-        setText("#current-heart-value", "No live data");
-        setText("#current-heart-unit", "");
-        setText("#current-heart-time", `Historical only: ${heartPresentation.value} bpm recorded ${formatDate(heartSampleTime(heart))}`);
-        setText("#rail-status", "Heart-rate data not live");
-        setStatusClass($("#rail-status-dot"), "error");
-        setText("#rail-updated", "Live heart rate is unavailable");
         loadLive({ quiet: true });
       }, cutoffDelay);
     }

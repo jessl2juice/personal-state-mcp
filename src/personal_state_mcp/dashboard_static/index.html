@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light">
   <meta name="personal-state-token" content="__PSM_TOKEN__">
   <title>Personal State</title>
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/app.css?v=heart-sources-v1">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true">
@@ -119,7 +119,18 @@
           </div>
           <div id="current-heart-card" class="current-reading current-heart" role="button" tabindex="0" data-timeline-focus aria-label="Open heart-rate history timeline">
             <div class="vital-topline"><div class="vital-icon"><svg><use href="#icon-heart"/></svg></div><div><div class="vital-name">Heart rate</div><div class="reading-label"><span id="heart-freshness-dot" class="status-dot"></span><span id="heart-freshness-label">Waiting for data</span></div></div></div>
-            <div class="reading-value"><span id="current-heart-value">--</span><span id="current-heart-unit" class="unit">bpm</span></div>
+            <div class="heart-source-grid" aria-label="Heart rate by source">
+              <div id="current-heart-fitbit-row" class="heart-source-row">
+                <span class="heart-source-name">Fitbit Air</span>
+                <span class="heart-source-value"><strong id="current-heart-fitbit-value">--</strong><small id="current-heart-fitbit-unit">bpm</small></span>
+                <span id="current-heart-fitbit-time" class="heart-source-meta">Waiting for Fitbit</span>
+              </div>
+              <div id="current-heart-watch-row" class="heart-source-row">
+                <span class="heart-source-name">Galaxy Watch</span>
+                <span class="heart-source-value"><strong id="current-heart-watch-value">--</strong><small id="current-heart-watch-unit">bpm</small></span>
+                <span id="current-heart-watch-time" class="heart-source-meta">Waiting for watch</span>
+              </div>
+            </div>
             <p id="current-heart-time">No heart-rate sample loaded</p>
             <a id="heart-repair-action" class="heart-repair-action" href="/downloads/personal-state-companion.apk" download hidden><svg><use href="#icon-download"/></svg>Install sync update</a>
           </div>
@@ -433,6 +444,6 @@
     </div>
   </dialog>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=heart-sources-v1"></script>
 </body>
 </html>
