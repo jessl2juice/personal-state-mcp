@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
@@ -15,6 +16,7 @@ from .adapters.google_health import (
 )
 from .collector import Collector
 from .config import load_config
+from .adapters.fitbit_ble import discover_heart_rate_devices, stream_heart_rate
 from .secrets import (
     delete_libre_password,
     delete_watch_access_credentials,
@@ -274,6 +276,51 @@ def cmd_google_health_disconnect(args) -> int:
     return 0
 
 
+def cmd_fitbit_ble_probe(args) -> int:
+    config = load_config()
+
+    def print_sample(sample: dict[str, object]) -> None:
+        observation = sample.get("observation")
+        public_sample = sample.get("sample")
+        payload = {
+            "event": "sample",
+            "sample": public_sample,
+            "stored": sample.get("stored"),
+        }
+        if isinstance(observation, dict):
+            payload["observation"] = {
+                "metric": observation.get("metric"),
+                "measured_at": observation.get("end_at") or observation.get("measured_at"),
+                "provenance": observation.get("provenance"),
+            }
+        print(json.dumps(payload, separators=(",", ":"), sort_keys=True), flush=True)
+
+    async def run() -> dict[str, object]:
+        if args.list:
+            devices = await discover_heart_rate_devices(
+                timeout_seconds=args.scan_seconds,
+                name_contains=args.name or config.fitbit_ble_name_contains,
+            )
+            return {"adapter": "fitbit_ble_heart_rate", "devices": devices}
+        store = StateStore(config.db_path)
+        return await stream_heart_rate(
+            store,
+            seconds=args.seconds,
+            address=args.address or config.fitbit_ble_device_address,
+            name_contains=args.name or config.fitbit_ble_name_contains,
+            dry_run=args.dry_run,
+            on_sample=print_sample if args.print_samples else None,
+        )
+
+    try:
+        result = asyncio.run(run())
+    except Exception as exc:
+        print(json.dumps({"adapter": "fitbit_ble_heart_rate", "status": "error", "error": str(exc)}, indent=2, sort_keys=True))
+        return 1
+    print(json.dumps({"status": "ok", **result}, indent=2, sort_keys=True))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Personal State MCP local utilities.")
     sub = parser.add_subparsers(required=True)
@@ -365,6 +412,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Delete only the OAuth grant and keep already synchronized local Google/Fitbit observations.",
     )
     google_disconnect.set_defaults(func=cmd_google_health_disconnect)
+
+    fitbit_ble = sub.add_parser(
+        "fitbit-ble-probe",
+        help="Scan or stream direct Bluetooth LE heart rate from a Fitbit-compatible device.",
+    )
+    fitbit_ble.add_argument("--list", action="store_true", help="Scan for Bluetooth LE Heart Rate Service devices and exit.")
+    fitbit_ble.add_argument("--address", help="Bluetooth address to connect to. Stored observations keep only a hash.")
+    fitbit_ble.add_argument("--name", help="Case-insensitive name fragment to prefer while scanning, such as Fitbit.")
+    fitbit_ble.add_argument("--scan-seconds", type=float, default=8.0)
+    fitbit_ble.add_argument("--seconds", type=float, default=300.0, help="How long to subscribe to heart-rate notifications.")
+    fitbit_ble.add_argument("--dry-run", action="store_true", help="Connect and print samples without writing observations.")
+    fitbit_ble.add_argument("--print-samples", action="store_true", help="Print each sample envelope as it is received.")
+    fitbit_ble.set_defaults(func=cmd_fitbit_ble_probe)
 
     return parser
 

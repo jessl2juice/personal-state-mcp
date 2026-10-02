@@ -18,6 +18,8 @@ SAMSUNG_HEALTH_PACKAGE = "com.sec.android.app.shealth"
 DIRECT_WEAR_PACKAGE = "ai.clinicianassist.personalstate"
 FITBIT_HEALTH_CONNECT_PACKAGES = frozenset({"com.fitbit.FitbitMobile", "com.fitbit.fitbitmobile"})
 FITBIT_HEALTH_CONNECT_ADAPTER_ID = "android_health_connect_fitbit"
+FITBIT_BLE_ADAPTER_ID = "fitbit_ble_heart_rate"
+FITBIT_BLE_SOURCE_PACKAGE = "bluetooth.le.heart_rate_service"
 DIRECT_WEAR_LIVE_MAX_AGE_SECONDS = 10
 MAX_BODY_BYTES = 1024 * 1024
 MAX_CHANGES = 500
@@ -371,6 +373,7 @@ def _validate_observation(value: Any, now: datetime) -> None:
         source_package == SAMSUNG_HEALTH_PACKAGE
         or (metric == "vitals.heart_rate" and source_package == DIRECT_WEAR_PACKAGE)
         or (metric == "vitals.heart_rate" and source_package in FITBIT_HEALTH_CONNECT_PACKAGES)
+        or (metric == "vitals.heart_rate" and source_package == FITBIT_BLE_SOURCE_PACKAGE)
     )
     if not allowed_source:
         raise WatchContractError("source_not_allowed", "This source is not accepted for the supplied metric.")
@@ -444,6 +447,8 @@ def validate_batch(value: dict[str, Any], now: datetime) -> None:
             _exact_keys(change, {"operation", "record_id", "metric", "source_package", "upstream_last_modified_at"})
             allowed_delete_source = change["source_package"] == SAMSUNG_HEALTH_PACKAGE or (
                 change["metric"] == "vitals.heart_rate" and change["source_package"] in FITBIT_HEALTH_CONNECT_PACKAGES
+            ) or (
+                change["metric"] == "vitals.heart_rate" and change["source_package"] == FITBIT_BLE_SOURCE_PACKAGE
             )
             if change["metric"] not in OBSERVATION_METRICS or not allowed_delete_source:
                 raise WatchContractError("invalid_delete", "A delete operation has an invalid source or metric.")
@@ -502,6 +507,8 @@ def batch_to_observations(batch: dict[str, Any], identifier_key: str, now: datet
                 adapter_id=(
                     "wear_health_services"
                     if raw["source_package"] == DIRECT_WEAR_PACKAGE
+                    else FITBIT_BLE_ADAPTER_ID
+                    if raw["source_package"] == FITBIT_BLE_SOURCE_PACKAGE
                     else FITBIT_HEALTH_CONNECT_ADAPTER_ID
                     if raw["source_package"] in FITBIT_HEALTH_CONNECT_PACKAGES
                     else "android_health_connect"
@@ -544,6 +551,8 @@ def observation_recency(observation: HealthObservation, now: datetime) -> dict[s
     elif observation.metric == "vitals.heart_rate":
         if observation.adapter_id == "wear_health_services" and age <= DIRECT_WEAR_LIVE_MAX_AGE_SECONDS:
             status, reason = "live", "Direct Wear heart rate was measured within the past ten seconds."
+        elif observation.adapter_id == FITBIT_BLE_ADAPTER_ID and age <= DIRECT_WEAR_LIVE_MAX_AGE_SECONDS:
+            status, reason = "live", "Fitbit Bluetooth heart rate was measured within the past ten seconds."
         elif age <= 900:
             status, reason = "recent_record", "This heart-rate record is within 15 minutes but is not labeled live."
         else:

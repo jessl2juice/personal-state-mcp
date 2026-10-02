@@ -76,6 +76,9 @@ class AppConfig:
     google_health_recent_hours: int = 36
     google_health_request_timeout_seconds: int = 12
     google_health_collect_budget_seconds: int = 35
+    fitbit_ble_enabled: bool = False
+    fitbit_ble_device_address: str | None = None
+    fitbit_ble_name_contains: str | None = None
     watch_mcp_metrics: tuple[str, ...] = (
         "activity.steps",
         "activity.exercise_session",
@@ -151,6 +154,9 @@ def load_config() -> AppConfig:
         google_health_recent_hours=_int_env("PERSONAL_STATE_GOOGLE_HEALTH_RECENT_HOURS", 36),
         google_health_request_timeout_seconds=_int_env("PERSONAL_STATE_GOOGLE_HEALTH_REQUEST_TIMEOUT_SECONDS", 12),
         google_health_collect_budget_seconds=_int_env("PERSONAL_STATE_GOOGLE_HEALTH_COLLECT_BUDGET_SECONDS", 35),
+        fitbit_ble_enabled=_bool_env("PERSONAL_STATE_FITBIT_BLE_ENABLED", False),
+        fitbit_ble_device_address=os.environ.get("PERSONAL_STATE_FITBIT_BLE_ADDRESS"),
+        fitbit_ble_name_contains=os.environ.get("PERSONAL_STATE_FITBIT_BLE_NAME"),
         watch_mcp_metrics=_csv_env(
             "PERSONAL_STATE_WATCH_MCP_METRICS",
             (

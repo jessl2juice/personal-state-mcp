@@ -28,6 +28,9 @@ function Import-PersonalStateSettings {
         GoogleHealthRecentHours = "PERSONAL_STATE_GOOGLE_HEALTH_RECENT_HOURS"
         GoogleHealthRequestTimeoutSeconds = "PERSONAL_STATE_GOOGLE_HEALTH_REQUEST_TIMEOUT_SECONDS"
         GoogleHealthCollectBudgetSeconds = "PERSONAL_STATE_GOOGLE_HEALTH_COLLECT_BUDGET_SECONDS"
+        FitbitBleEnabled = "PERSONAL_STATE_FITBIT_BLE_ENABLED"
+        FitbitBleAddress = "PERSONAL_STATE_FITBIT_BLE_ADDRESS"
+        FitbitBleName = "PERSONAL_STATE_FITBIT_BLE_NAME"
     }
 
     foreach ($entry in $mapping.GetEnumerator()) {

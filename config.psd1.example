@@ -18,6 +18,10 @@
     GoogleHealthSyncSeconds = 300
     GoogleHealthRecentHours = 36
 
+    FitbitBleEnabled = $false
+    FitbitBleAddress = ""
+    FitbitBleName = "Fitbit"
+
     CloudflareTunnelEnabled = $false
     DashboardHealthHost = "localhost"
 }

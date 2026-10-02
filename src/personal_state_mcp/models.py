@@ -189,6 +189,9 @@ class HealthObservation:
             )
             vendor = "Fitbit" if exact_air else "Google Health"
             source = "Fitbit Air via Google Health" if exact_air else "Google Health synchronized wearable history"
+        elif self.adapter_id == "fitbit_ble_heart_rate":
+            vendor = "Fitbit"
+            source = "Fitbit direct Bluetooth heart rate"
         elif self.adapter_id == "android_health_connect_fitbit":
             vendor = "Fitbit"
             source = "Fitbit via Health Connect"

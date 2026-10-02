@@ -1,6 +1,6 @@
 # Personal State MCP
 
-Personal State is a private, read-only physiological context service. It combines Libre glucose, Galaxy Watch and Samsung Health records, and synchronized Fitbit/Google Health records in one normalized history, dashboard, and Model Context Protocol (MCP) server.
+Personal State is a private, read-only physiological context service. It combines Libre glucose, Galaxy Watch and Samsung Health records, direct Fitbit Bluetooth heart rate, and synchronized Fitbit/Google Health records in one normalized history, dashboard, and Model Context Protocol (MCP) server.
 
 The primary use case is an authorized agent noticing that the user seems unusually confused, inconsistent, indecisive, or "off" and requesting time-bounded physiological context. Personal State reports recorded facts, timestamps, source, freshness, and limitations. It does not diagnose causality, automate treatment, replace clinician judgment, or act as an alarm. Official Libre, Samsung, Fitbit, and Google applications remain authoritative for their device features and safety notices.
 
@@ -23,6 +23,7 @@ Start with [Top-Level Design and Audit](docs/top-level-design-and-audit.md) when
 | FreeStyle Libre 3 Plus | Official Libre sharing -> dedicated LibreLinkUp follower -> Python adapter | Near real time when Abbott's follower service is current; stale readings are withheld from threshold context |
 | Galaxy Watch heart rate | Wear OS Health Services -> watch app -> phone relay -> authenticated ingest | Labeled live only while the measured sample is no more than 10 seconds old |
 | Samsung Health history | Samsung Health -> Health Connect or licensed Samsung Health Data SDK -> phone app -> authenticated ingest | Recorded history with source timestamps; never promoted to live without direct-watch evidence |
+| Fitbit Bluetooth heart rate | Fitbit or compatible device -> Bluetooth LE Heart Rate Service -> Python BLE probe | Labeled live only while the measured sample is no more than 10 seconds old |
 | Fitbit Air / Google wearable | Fitbit app sync -> Google Health API v4 -> Python adapter | Synchronized records, never second-by-second live data |
 | Google Fit and LibreView exports | User-owned archive -> explicit importer -> normalized SQLite history | Historical only, with original timestamps and provenance |
 
@@ -56,6 +57,7 @@ Optional:
 - Android platform tools (`adb`) for real-device installation.
 - A Cloudflare account and `cloudflared` only for private remote access.
 - A Google Cloud OAuth client only for Fitbit/Google Health synchronization.
+- Optional Python BLE runtime (`.[ble]`) and host Bluetooth access for direct Fitbit heart-rate experiments.
 
 Confirm the core tools:
 
@@ -197,7 +199,31 @@ The client secret, refresh token, redirect URI, and scopes are stored in the OS 
 .\.venv\Scripts\personal-state.exe google-health-backfill --days 365
 ```
 
-Fitbit data appears only after the Fitbit app synchronizes it to Google Health. It is always labeled as synchronized or last recorded, never live. Exact Fitbit Air attribution is used only when Google supplies matching platform and device evidence.
+Fitbit cloud data appears only after the Fitbit app synchronizes it to Google Health. It is always labeled as synchronized or last recorded, never live. Exact Fitbit Air attribution is used only when Google supplies matching platform and device evidence.
+
+### Fitbit Direct Bluetooth Heart Rate
+
+The realtime Fitbit lane is separate from Google Health. It subscribes to the standard Bluetooth LE Heart Rate Service (`0x180D`) and stores live heart-rate samples with adapter id `fitbit_ble_heart_rate`. This path is heart-rate only; steps, sleep, HRV, oxygen, and recovery context still come from Google Health or Health Connect after phone/cloud synchronization.
+
+Install the optional BLE runtime:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[ble]"
+```
+
+Scan for available heart-rate devices:
+
+```powershell
+.\.venv\Scripts\personal-state.exe fitbit-ble-probe --list --name Fitbit
+```
+
+Stream and store live samples:
+
+```powershell
+.\.venv\Scripts\personal-state.exe fitbit-ble-probe --name Fitbit --seconds 300 --print-samples
+```
+
+The database stores a hash of the Bluetooth identity, not the raw address. A Fitbit Bluetooth sample is labeled live only while it is no more than ten seconds old. This experimental lane may interfere with the Fitbit app's normal sync, so Google Health and Health Connect remain the source-of-record context lanes.
 
 ### Galaxy Phone And Watch
 
@@ -314,7 +340,7 @@ The consolidated dashboard provides one-glance source status followed by detaile
 
 - Glucose and direct Galaxy heart rate with units, timestamps, age, freshness, and provenance.
 - Day, week, month, year, and complete-history views on a truthful recorded-time axis.
-- Source-aware Galaxy, Samsung Health, Google Fit archive, and Fitbit/Google Health records.
+- Source-aware Galaxy, Samsung Health, Google Fit archive, direct Fitbit Bluetooth heart rate, and Fitbit/Google Health records.
 - Raw values in cards, tooltips, tables, exports, and APIs.
 - Display-only heart-rate smoothing within continuous segments.
 - A visible line break for gaps longer than one minute.

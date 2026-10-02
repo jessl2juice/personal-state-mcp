@@ -1,8 +1,8 @@
 # Personal State MCP Top-Level Design and Audit
 
-Document version: 0.2
-Date: 2026-10-01
-Status: Live-source audit, implementation notes, and open Fitbit currentness gate
+Document version: 0.3
+Date: 2026-10-02
+Status: Direct Fitbit BLE realtime lane added; outdoor-device validation remains open
 
 ## Source Basis
 
@@ -34,14 +34,14 @@ The system must not turn missing data into reassurance, turn stale data into cur
 
 ### Person Whose Data Is Shown
 
-As the person whose data is shown, I need a single truthful screen that shows glucose, direct watch heart rate, Samsung/Galaxy history, and Fitbit/Google Health history with clear source and age labels, so I can tell what is happening now versus what was merely recorded earlier.
+As the person whose data is shown, I need a single truthful screen that shows glucose, direct Galaxy heart rate, direct Fitbit Bluetooth heart rate, Samsung/Galaxy history, and Fitbit/Google Health history with clear source and age labels, so I can tell what is happening now versus what was merely recorded earlier.
 
 Acceptance criteria:
 
 - Every prominent value shows value, unit, source, measurement time, age, and state.
 - Current glucose can be near real time only when Libre freshness permits it.
-- Current heart rate can be live only when the direct Galaxy Watch sample is no more than 10 seconds old.
-- Fitbit/Google Health values are labeled synchronized or recorded, never live.
+- Current heart rate can be live only when a direct Galaxy Watch or Fitbit Bluetooth sample is no more than 10 seconds old.
+- Fitbit/Google Health cloud and Health Connect values are labeled synchronized or recorded, never live.
 - Missing values say unavailable, waiting, stale, or not connected. They never imply normal physiology.
 
 ### Clinician Or Clinical Reviewer
@@ -84,10 +84,11 @@ Acceptance criteria:
 | --- | --- | --- | --- |
 | Near-real-time glucose | Libre 3 Plus through LibreLinkUp follower | Near real time only when Abbott follower data is fresh | Can occupy glucose current card when freshness passes policy |
 | Direct live vital | Galaxy Watch Wear OS Health Services | Live only for direct samples <= 10 seconds old | Can show numeric live heart rate only at sample/card level |
+| Direct live vital | Fitbit Bluetooth LE Heart Rate Service | Live only for direct samples <= 10 seconds old | Can support Casey realtime heart-rate biofeedback; heart-rate only |
 | Recorded direct/vendor history | Samsung Health / Health Connect / Samsung Health Data SDK | Recorded history with source timestamps | Never promoted to live without direct-watch evidence |
 | Synchronized wearable history | Fitbit Air or Google wearable through Google Health | Synchronized after Fitbit/Google app/cloud sync | Always synchronized/recorded, never live |
 | Phone Health Connect source history | Fitbit application through Android Health Connect | Synchronized after Fitbit phone app writes Health Connect records | Source-labeled as Fitbit via Health Connect when package evidence is present; never direct live |
-| Direct Fitbit cloud evaluation | Fitbit Web API or Google Health successor endpoints | Cloud/API direct, subject to provider cadence and API lifecycle | Candidate future lane; must not be presented as Bluetooth/device-direct or guaranteed realtime |
+| Direct Fitbit cloud evaluation | Fitbit Web API or Google Health successor endpoints | Cloud/API direct, subject to provider cadence and API lifecycle | Candidate future lane; must not be presented as guaranteed realtime until measured |
 | Historical import | LibreView, Google Fit Takeout, other user archives | Historical only | Cannot occupy a live/current card |
 
 The term `Fitbit Air` is allowed only when source evidence supports it. Otherwise the public label should be `Google Health synchronized wearable history`.
@@ -113,12 +114,13 @@ Control planes:
 ## Design Decisions
 
 1. Live is a property of a direct sample, not a whole source panel.
-2. Fitbit/Google Health is synchronized history, even when recent.
-3. Source labeling must be shared code or shared data, not repeated UI strings.
-4. Manual refresh must have source-level intent and source-level result reporting.
-5. Disconnect must explicitly handle both credentials and local source data.
-6. Secret fallback may not silently reduce security.
-7. The Google/Fitbit pilot gate remains one real night of Jess's band data, with scopes and data types confirmed before claiming readiness.
+2. Fitbit/Google Health cloud and Health Connect are synchronized history, even when recent.
+3. Fitbit BLE heart rate is a separate direct-live source lane and is eligible for Casey realtime only inside the 10-second live window.
+4. Source labeling must be shared code or shared data, not repeated UI strings.
+5. Manual refresh must have source-level intent and source-level result reporting.
+6. Disconnect must explicitly handle both credentials and local source data.
+7. Secret fallback may not silently reduce security.
+8. The Google/Fitbit pilot gate remains real-world Casey/Fitbit validation, with direct BLE cadence, reconnect behavior, and cloud catch-up documented before claiming readiness.
 
 ## Current Design Strengths
 
@@ -555,21 +557,24 @@ Sanitized sequence of what was tried and learned:
 5. Foreground dashboard and Cloudflare tunnel sessions were used for diagnostics. Scheduled tasks were stopped during diagnostics and restored afterward.
 6. Phone sync first failed with HTTP 502. The server traceback showed `sqlite3.OperationalError: no such table: watch_ingest_rate_events`. The fix was a schema-current check and self-healing migration path for the additive rate-events table.
 7. Phone sync then completed successfully, proving the ingest endpoint, HMAC auth, tunnel route, and Health Connect upload path were working.
-8. Fitbit Health Connect records were present under the Fitbit source lane, but the newest Fitbit heart-rate record exposed to Personal State was stale relative to the Casey biofeedback window. This is the remaining product gap.
+8. Fitbit Health Connect records were present under the Fitbit source lane, but the newest Fitbit heart-rate record exposed to Personal State was stale relative to the Casey biofeedback window. This proved that synchronized Fitbit data alone is not sufficient for Casey realtime use.
 9. Direct Galaxy watch polling caused unacceptable battery drain during testing. `WatchLivePollingEnabled = $false` now turns off server-side live watch demand while preserving Fitbit and other phone Health Connect uploads.
 10. The dashboard source summary was corrected so existing phone Fitbit data is shown as synced/stale rather than blocked by a separate Google Health collector error.
 
 ## Direct Fitbit Access Design Note
 
-Direct Fitbit reading should mean cloud/API direct, not Bluetooth/direct-device polling. The legacy Fitbit Web API includes intraday heart-rate endpoints, but Fitbit/Google have announced a transition toward the Google Health API. If this path is pursued, implement it as a separate adapter and source panel:
+Direct Fitbit access is now split into two explicit lanes because Casey's realtime biofeedback need outweighs preserving normal Fitbit app sync during a session:
 
-- source id: `fitbit_direct_cloud`;
-- source class: synchronized wearable cloud data;
-- first metrics: heart-rate intraday, steps/activity, sleep, and device metadata needed for exact Fitbit Air attribution;
-- biofeedback rule: eligible only when measured-time age is inside the configured Casey currentness window;
-- fallback rule: never silently fall back to Galaxy Watch; if fallback is displayed, name it visibly;
-- API risk: legacy Fitbit Web API lifecycle and Google Health successor semantics must be verified before production reliance;
-- verification: run with Casey's phone carried on an outdoor run and confirm values advance without a watch fallback.
+- `fitbit_ble_heart_rate`: direct Bluetooth LE Heart Rate Service (`0x180D`) subscription. Source class `direct_live_vital`. First metric is `vitals.heart_rate` only. It may be labeled live only when the newest measured sample is no more than ten seconds old. It is eligible for Casey realtime biofeedback.
+- `fitbit_direct_cloud`: future cloud/API evaluation lane. Source class `synchronized_wearable_cloud_data`. It may provide richer Fitbit-owned context, but it is not assumed realtime until measured cadence proves otherwise.
+- `google_health_fitbit`: Google Health synchronized records. Source class `synchronized_wearable_history`. Useful for history and source-of-record context, not live biofeedback.
+- `android_health_connect_fitbit`: phone-local Health Connect Fitbit records. Source class `phone_synchronized_fitbit_history`. Useful for corroboration, not live biofeedback unless the record age happens to satisfy the Casey currentness window.
+
+Fallback rule: never silently fall back to Galaxy Watch for Casey's Fitbit biofeedback. If Galaxy is displayed, name it visibly as Galaxy. If Fitbit BLE is absent or stale, Casey realtime biofeedback is unavailable even when slower Fitbit history exists.
+
+Verification rule: run with Casey's phone and Fitbit during an outdoor run. Confirm whether `fitbit_ble_heart_rate` advances at a live cadence without relying on Galaxy, and record reconnect behavior, sample age, battery impact, and whether the Fitbit app's later cloud sync recovers.
+
+2026-10-02 field result: the phone companion was updated in place without losing pairing, Bluetooth permissions were granted, and the local receiver/tunnel path was repaired. The phone then uploaded 3,376 Health Connect changes successfully. The BLE probe connected to the bonded `Google Fitbit Air` LE device and completed GATT discovery, but the standard Heart Rate Service / Heart Rate Measurement characteristic was not exposed to the companion. Public standard BLE HR is therefore not a verified Casey realtime path for this device state. The next design path is Fitbit-proprietary GATT research or a measured Fitbit/cloud API cadence path; synchronized Health Connect Fitbit data remains useful context but is not adequate as Casey realtime biofeedback when stale.
 
 ## Notion Source Links
 

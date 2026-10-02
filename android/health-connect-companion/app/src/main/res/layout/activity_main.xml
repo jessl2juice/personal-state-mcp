@@ -91,6 +91,22 @@
             android:layout_marginTop="10dp"
             android:text="@string/sync_now" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/fitbitBleStartButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="10dp"
+            android:text="@string/fitbit_ble_start" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/fitbitBleStopButton"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="4dp"
+            android:text="@string/fitbit_ble_stop" />
+
         <TextView
             android:id="@+id/lastSync"
             android:layout_width="match_parent"

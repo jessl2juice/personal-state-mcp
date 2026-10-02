@@ -6,7 +6,7 @@ Intended readers: user, primary care, endocrinology, cardiology, and other autho
 
 ## What Personal State does
 
-Personal State brings Libre glucose, direct Galaxy heart rate, Samsung Health history, Google Fit archive records, and synchronized Fitbit/Google Health observations into one private review surface. The dashboard emphasizes what was measured, when it was measured, when it reached the system, how old it is, where it came from, and where coverage is incomplete.
+Personal State brings Libre glucose, direct Galaxy heart rate, direct Fitbit Bluetooth heart rate, Samsung Health history, Google Fit archive records, and synchronized Fitbit/Google Health observations into one private review surface. The dashboard emphasizes what was measured, when it was measured, when it reached the system, how old it is, where it came from, and where coverage is incomplete.
 
 It supports review and conversation. It does not diagnose a condition, determine causality, predict an emergency, provide treatment instructions, or replace the official Libre, Samsung, Fitbit, or Google applications.
 
@@ -38,7 +38,7 @@ Only fresh or recent glucose can produce below, near, or above threshold context
 
 ### Heart rate
 
-The live heart-rate position shows a number only when the newest direct watch measurement is no more than ten seconds old. This covers the watch's five-second delivery cadence without flicker. At eleven seconds it changes to `No live data`; an older reading remains available in history but never occupies the live-vital position.
+The live heart-rate position shows a number only when the newest direct Galaxy Watch or Fitbit Bluetooth measurement is no more than ten seconds old. At eleven seconds it changes to `No live data`; an older reading remains available in history but never occupies the live-vital position.
 
 This rule prevents a technically valid but old value from looking current.
 
@@ -82,7 +82,7 @@ Common causes include:
 - Health Connect permission or source-availability limitations.
 - Fitbit phone-app or Google Health synchronization delay.
 
-The dashboard can know when the companion last read Health Connect, when the server last accepted an upload, and when a Google Health record reached Personal State. It generally cannot prove when the watch last synchronized to Samsung Health or when the Fitbit application will next synchronize. Fitbit/Google Health values are never labeled as direct live measurements.
+The dashboard can know when the companion last read Health Connect, when the server last accepted an upload, when a Google Health record reached Personal State, and when a direct Fitbit Bluetooth heart-rate packet was received. It generally cannot prove when the watch last synchronized to Samsung Health or when the Fitbit application will next synchronize. Fitbit/Google Health cloud and Health Connect values are never labeled as direct live measurements.
 
 ## Clinician workflows
 

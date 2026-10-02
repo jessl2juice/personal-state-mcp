@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .watch_contract import FITBIT_HEALTH_CONNECT_ADAPTER_ID
+from .watch_contract import FITBIT_BLE_ADAPTER_ID, FITBIT_HEALTH_CONNECT_ADAPTER_ID
 
 
 WATCH_SOURCE_GROUPS: dict[str, dict[str, Any]] = {
@@ -36,6 +36,12 @@ WATCH_SOURCE_GROUPS: dict[str, dict[str, Any]] = {
         "adapter_ids": (FITBIT_HEALTH_CONNECT_ADAPTER_ID,),
         "limitations": ["Fitbit Health Connect records depend on phone and Fitbit app sync cadence; Casey biofeedback requires a fresh Fitbit heart-rate record."],
     },
+    "fitbit_ble_live": {
+        "label": "Fitbit direct Bluetooth heart rate",
+        "source_class": "direct_live_vital",
+        "adapter_ids": (FITBIT_BLE_ADAPTER_ID,),
+        "limitations": ["Bluetooth LE Heart Rate Service can support Casey live heart-rate biofeedback, but it is heart-rate only and may disrupt normal Fitbit app sync."],
+    },
     "historical_imports": {
         "label": "Historical imports",
         "source_class": "historical_import",
@@ -48,7 +54,7 @@ WATCH_SOURCE_GROUPS: dict[str, dict[str, Any]] = {
 WATCH_SOURCE_FILTERS: dict[str, tuple[str, ...]] = {
     **{key: tuple(spec["adapter_ids"]) for key, spec in WATCH_SOURCE_GROUPS.items()},
     "galaxy": ("wear_health_services", "android_samsung_health_data", "android_health_connect"),
-    "fitbit": ("google_health_fitbit", FITBIT_HEALTH_CONNECT_ADAPTER_ID),
+    "fitbit": (FITBIT_BLE_ADAPTER_ID, "google_health_fitbit", FITBIT_HEALTH_CONNECT_ADAPTER_ID),
 }
 
 

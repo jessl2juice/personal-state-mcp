@@ -16,6 +16,7 @@ dependencies = ["tzdata>=2025.2; sys_platform == 'win32'"]
 mcp = ["mcp[cli]>=2.0.0"]
 keychain = ["keyring>=25.0"]
 dev = ["pytest>=8.3"]
+ble = ["bleak>=0.22"]
 
 [project.scripts]
 personal-state = "personal_state_mcp.cli:main"

@@ -585,7 +585,7 @@ def test_dashboard_places_all_current_signals_before_history_charts() -> None:
     assert "Stored history only" in javascript
     assert "Live refresh failed" in javascript
     assert "sourceFilterForObservation" in javascript
-    assert 'data-source="google_health_sync"' in javascript
+    assert 'google_health_fitbit: "google_health_sync"' in javascript
     assert 'data-source="${escapeHtml(sourceFilter)}"' in javascript
     assert "&source=${encodeURIComponent(state.detailSource)}" in javascript
     assert "openMetricHistory(card.dataset.metric, card.dataset.source || null)" in javascript
@@ -612,5 +612,7 @@ def test_dashboard_places_all_current_signals_before_history_charts() -> None:
     assert '"Heart rate · trend"' in javascript
     assert 'payload.watch?.direct_heart_rate' in javascript
     assert 'google_health_fitbit: "Google Health synchronized wearable"' in javascript
+    assert 'fitbit_ble_heart_rate: "Fitbit direct Bluetooth"' in javascript
+    assert 'fitbit_ble_heart_rate: "fitbit_ble_live"' in javascript
     assert "Fitbit Air · Google Health" not in javascript
-    assert 'Treat Fitbit/Google Health values as synchronized records, never live.' in javascript
+    assert "Treat direct Galaxy and Fitbit Bluetooth heart rate as live only when measured within ten seconds." in javascript

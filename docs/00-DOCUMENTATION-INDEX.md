@@ -7,7 +7,7 @@ Document owner: Personal State project
 
 ## Purpose
 
-Personal State is a private, read-only physiological context system. It combines glucose from a FreeStyle Libre 3 Plus follower connection; direct Galaxy Watch heart rate; selected Samsung Health and Health Connect records; synchronized Fitbit/Google Health records; and user-imported LibreView and Google Fit history. It preserves long-term history, presents the data on shared source-aware timelines, and gives authorized AI agents selective access through Model Context Protocol (MCP).
+Personal State is a private, read-only physiological context system. It combines glucose from a FreeStyle Libre 3 Plus follower connection; direct Galaxy Watch heart rate; direct Fitbit Bluetooth heart rate; selected Samsung Health and Health Connect records; synchronized Fitbit/Google Health records; and user-imported LibreView and Google Fit history. It preserves long-term history, presents the data on shared source-aware timelines, and gives authorized AI agents selective access through Model Context Protocol (MCP).
 
 The system is designed to help the user and the user's clinicians review recorded facts with clear timestamps, freshness, gaps, provenance, and source limitations. It is not an alarm system, diagnostic system, treatment recommender, emergency service, or medical device. Official Libre, Samsung, Fitbit, and Google applications remain the safety and device-authority layer.
 

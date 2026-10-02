@@ -577,6 +577,7 @@
     if (adapter === "google_health_fitbit") {
       return source === "Fitbit Air via Google Health" ? source : "Google Health synchronized wearable";
     }
+    if (adapter === "fitbit_ble_heart_rate") return "Fitbit direct Bluetooth";
     if (adapter === "android_health_connect_fitbit") return "Fitbit via Health Connect";
     if (adapter === "libre_linkup" && source === "libre_linkup_follower") return "LibreLinkUp follower";
     if (adapter === "wear_health_services") return "Direct Galaxy Watch";
@@ -585,6 +586,7 @@
       android_samsung_health_data: "Samsung Health Data SDK",
       android_health_connect: "Samsung Health via Health Connect",
       android_health_connect_fitbit: "Fitbit via Health Connect",
+      fitbit_ble_heart_rate: "Fitbit direct Bluetooth",
       wear_health_services: "Direct Galaxy Watch",
       google_fit_takeout: "Google Fit historical export",
       google_health_fitbit: "Google Health synchronized wearable",
@@ -598,6 +600,7 @@
       android_samsung_health_data: "samsung_health_history",
       android_health_connect: "health_connect_history",
       android_health_connect_fitbit: "fitbit_health_connect",
+      fitbit_ble_heart_rate: "fitbit_ble_live",
       wear_health_services: "galaxy_direct_live",
       google_fit_takeout: "historical_imports",
       google_health_fitbit: "google_health_sync",
@@ -658,7 +661,10 @@
     if (!element) return;
     const status = watch?.fitbit_biofeedback || {};
     const age = Number.isFinite(Number(status.age_seconds)) ? formatAge(Number(status.age_seconds)) : "no current age";
-    if (status.usable) {
+    if (status.realtime) {
+      element.textContent = `Casey biofeedback live · Fitbit Bluetooth heart rate ${age}`;
+      element.className = "biofeedback-status is-current";
+    } else if (status.usable) {
       element.textContent = `Casey biofeedback ready · Fitbit heart rate ${age}`;
       element.className = "biofeedback-status is-current";
     } else if (status.status === "blocked") {
@@ -730,8 +736,9 @@
       const age = formatAge(ageSeconds);
       const eventAt = observationTime(observation);
       const source = adapterLabel(observation);
+      const sourceFilter = sourceFilterForObservation(observation, "fitbit");
       return `
-        <button type="button" class="fitbit-air-card" data-metric="${escapeHtml(metric)}" data-source="google_health_sync" aria-label="Open ${escapeHtml(watchMetricLabels[metric] || metric)} history and graph">
+        <button type="button" class="fitbit-air-card" data-metric="${escapeHtml(metric)}" data-source="${escapeHtml(sourceFilter)}" aria-label="Open ${escapeHtml(watchMetricLabels[metric] || metric)} history and graph">
           <span class="fitbit-card-icon"><svg><use href="#${icons[metric] || "icon-activity"}"/></svg></span>
           <span class="fitbit-card-label">${escapeHtml(watchMetricLabels[metric] || metric)}</span>
           <span class="fitbit-card-value"><strong>${escapeHtml(presentation.value)}</strong>${presentation.unit ? `<small>${escapeHtml(presentation.unit)}</small>` : ""}</span>
@@ -814,7 +821,7 @@
   function renderWatchMetricCards(latest, latestBySource = {}) {
     const grid = $("#watch-latest-grid");
     const sourceNames = { galaxy: "Galaxy", fitbit: "Fitbit Air", archive: "Google Fit archive" };
-    const sourceFilters = { galaxy: "galaxy", fitbit: "google_health_sync", archive: "historical_imports" };
+    const sourceFilters = { galaxy: "galaxy", fitbit: "fitbit", archive: "historical_imports" };
     const entries = [];
     const appendEntries = (sourceKey, observations) => {
       Object.entries(observations || {}).forEach(([metric, observation]) => {
@@ -980,7 +987,7 @@
     availabilityBody.innerHTML = availability.length ? availability.map((item) => `
       <tr>
         <td>${escapeHtml(watchMetricLabels[item.metric] || item.metric)}</td>
-        <td>${escapeHtml(({ android_samsung_health_data: "Samsung Health Data SDK", android_health_connect: "Health Connect", android_health_connect_fitbit: "Fitbit via Health Connect", wear_health_services: "Direct Galaxy Watch", google_health_fitbit: "Google Health synchronized wearable" })[item.adapter_id] || item.adapter_id)}</td>
+        <td>${escapeHtml(({ android_samsung_health_data: "Samsung Health Data SDK", android_health_connect: "Health Connect", android_health_connect_fitbit: "Fitbit via Health Connect", fitbit_ble_heart_rate: "Fitbit direct Bluetooth", wear_health_services: "Direct Galaxy Watch", google_health_fitbit: "Google Health synchronized wearable" })[item.adapter_id] || item.adapter_id)}</td>
         <td><span class="availability-state ${item.stale ? "is-stale" : ""}">${escapeHtml(String(item.state || "unknown").replaceAll("_", " "))}</span></td>
         <td>${escapeHtml(item.checked_at_utc ? formatDate(item.checked_at_utc) : "No report")}</td>
       </tr>
@@ -1602,7 +1609,7 @@
       `Call health.current_state(), health.context(), and health.glucose_recent(hours=${hours}, limit=5000).`,
       "Call health.watch() and use health.watch_recent() only for a specific recorded metric when history is needed.",
       "State source, attribution, measurement time, received or ingest time, freshness, and important data gaps.",
-      "Treat direct Galaxy heart rate as live only when it is within ten seconds. Treat Fitbit/Google Health values as synchronized records, never live.",
+      "Treat direct Galaxy and Fitbit Bluetooth heart rate as live only when measured within ten seconds. Treat Fitbit/Google Health cloud and Health Connect values as synchronized records, never live.",
       "Use the configured 80 mg/dL threshold only as decision-support context.",
       "Compare the three sources on their shared recorded-time axis, without implying that different sampling cadences are equivalent. Do not treat missing data as normal.",
       "Do not diagnose causality or provide treatment, dosing, food, driving, or exercise instructions.",

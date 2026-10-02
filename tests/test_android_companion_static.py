@@ -55,6 +55,32 @@ def test_android_layout_exposes_optional_permission_button() -> None:
     assert 'name="optional_permissions"' in strings
 
 
+def test_phone_companion_exposes_fitbit_ble_without_location_permission() -> None:
+    manifest = (ANDROID_MAIN / "AndroidManifest.xml").read_text(encoding="utf-8")
+    layout = (ANDROID_MAIN / "res" / "layout" / "activity_main.xml").read_text(encoding="utf-8")
+    service = (
+        ANDROID_MAIN
+        / "java"
+        / "ai"
+        / "clinicianassist"
+        / "personalstate"
+        / "FitbitBleHeartService.kt"
+    ).read_text(encoding="utf-8")
+
+    assert "android.permission.BLUETOOTH_SCAN" in manifest
+    assert 'android:usesPermissionFlags="neverForLocation"' in manifest
+    assert "android.permission.BLUETOOTH_CONNECT" in manifest
+    assert "ACCESS_FINE_LOCATION" not in manifest
+    assert "ACCESS_COARSE_LOCATION" not in manifest
+    assert 'android:id="@+id/fitbitBleStartButton"' in layout
+    assert 'android:id="@+id/fitbitBleStopButton"' in layout
+    assert 'const val FITBIT_BLE_SOURCE_PACKAGE = "bluetooth.le.heart_rate_service"' in service
+    assert "Direct Bluetooth LE Heart Rate Service sample received." in service
+    assert "adapter.bondedDevices" in service
+    assert "Connecting to bonded Fitbit Bluetooth device" in service
+    assert "No standard heart-rate characteristic was found." in service
+
+
 def test_fitbit_health_connect_origin_is_labeled_as_external_device() -> None:
     sync_source = (
         ANDROID_MAIN

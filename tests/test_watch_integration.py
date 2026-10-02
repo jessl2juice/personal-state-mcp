@@ -12,6 +12,7 @@ from personal_state_mcp.models import HealthObservation
 from personal_state_mcp.service import HealthService
 from personal_state_mcp.watch_contract import (
     DIRECT_WEAR_PACKAGE,
+    FITBIT_BLE_ADAPTER_ID,
     FITBIT_HEALTH_CONNECT_ADAPTER_ID,
     WatchContractError,
     parse_json_strict,
@@ -286,6 +287,36 @@ def test_fitbit_health_connect_heart_rate_is_accepted_as_fitbit_source() -> None
         assert dashboard["sources"]["fitbit"]["status"] == "synced"
         assert dashboard["fitbit_biofeedback"]["usable"] is True
         assert dashboard["fitbit_biofeedback"]["reason"] == "fitbit_heart_rate_current"
+
+
+def test_fitbit_ble_heart_rate_upload_is_accepted_as_live_fitbit_source() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        cfg = config(Path(directory) / "state.db")
+        cfg = AppConfig(**{**cfg.__dict__, "fitbit_ble_enabled": True})
+        app = DashboardApp(cfg)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        value = direct_heart_observation(now, bpm=81)
+        value["record_id"] = "fitbit-ble-phone-heart"
+        value["source_package"] = "bluetooth.le.heart_rate_service"
+        value["attribution"] = {
+            "state": "external_device",
+            "evidence": "Direct Bluetooth LE Heart Rate Service sample received by phone companion.",
+            "device_type": "watch",
+            "device_model": "Fitbit BLE heart-rate device",
+        }
+        payload = batch(now, [{"operation": "upsert", "observation": value}])
+        body, headers = signed_request(payload, now)
+
+        status, result = app.ingest_watch(body, headers)
+
+        assert status == 200
+        assert result["counts"]["inserted"] == 1
+        latest = app.store.latest_watch_by_metric(adapter_ids=(FITBIT_BLE_ADAPTER_ID,))["vitals.heart_rate"]
+        assert latest.adapter_id == FITBIT_BLE_ADAPTER_ID
+        dashboard = app.watch_dashboard(now + timedelta(seconds=2), None)
+        assert dashboard["sources"]["fitbit"]["status"] == "live"
+        assert dashboard["fitbit_biofeedback"]["status"] == "live"
+        assert dashboard["fitbit_biofeedback"]["realtime"] is True
 
 
 def test_live_heart_rate_limit_does_not_block_fitbit_health_connect_sync() -> None:

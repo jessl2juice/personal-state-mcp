@@ -1,11 +1,15 @@
 package ai.clinicianassist.personalstate
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.PermissionController
@@ -53,6 +57,16 @@ class MainActivity : AppCompatActivity() {
         PermissionController.createRequestPermissionResultContract(),
     ) { lifecycleScope.launch { refreshStatus() } }
 
+    private val bluetoothPermissionRequest = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grants ->
+        if (grants.values.all { it }) {
+            startFitbitBle()
+        } else {
+            binding.liveHeartStatus.text = "Bluetooth permission is required for Fitbit live heart rate."
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -95,6 +109,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
         binding.syncButton.setOnClickListener { syncNow() }
+        binding.fitbitBleStartButton.setOnClickListener { startFitbitBle() }
+        binding.fitbitBleStopButton.setOnClickListener {
+            FitbitBleHeartService.stop(this)
+            binding.liveHeartStatus.text = "Fitbit Bluetooth heart-rate stream stopped."
+        }
         lifecycleScope.launch { refreshStatus() }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -184,6 +203,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshLiveHeartStatus() {
+        val serviceStatus = store.liveHeartStatus()
+        if (serviceStatus?.contains("Fitbit", ignoreCase = true) == true ||
+            serviceStatus?.contains("FITBIT", ignoreCase = true) == true
+        ) {
+            binding.liveHeartStatus.text = serviceStatus
+            return
+        }
+
         val pending = store.pendingHeartReading()?.let {
             runCatching { HeartRatePayload.parse(it.toByteArray(), maxAgeSeconds = null) }.getOrNull()
         }
@@ -207,6 +234,30 @@ class MainActivity : AppCompatActivity() {
             else -> "${ageSeconds / 3_600L} hr old"
         }
         binding.liveHeartStatus.text = "$label\n${bpm.roundToInt()} bpm · $age"
+    }
+
+    private fun startFitbitBle() {
+        if (store.pairing() == null) {
+            binding.connectionStatus.text = "Choose the pairing file first."
+            return
+        }
+        val permissions = bluetoothPermissionsNeeded()
+        if (permissions.isNotEmpty()) {
+            bluetoothPermissionRequest.launch(permissions.toTypedArray())
+            return
+        }
+        FitbitBleHeartService.start(this)
+        binding.liveHeartStatus.text = "Scanning for Fitbit Bluetooth heart rate..."
+    }
+
+    private fun bluetoothPermissionsNeeded(): List<String> {
+        if (Build.VERSION.SDK_INT < 31) return emptyList()
+        return listOf(
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_CONNECT,
+        ).filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
     }
 
     private fun scheduleBackgroundIfAllowed() {

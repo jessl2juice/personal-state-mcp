@@ -269,7 +269,7 @@ class HealthService:
         return payload
 
     def _wearables_enabled(self) -> bool:
-        return self.config.watch_enabled or self.config.google_health_enabled
+        return self.config.watch_enabled or self.config.google_health_enabled or self.config.fitbit_ble_enabled
 
     def _watch_summary(self, *, include_clinical_findings: bool = True) -> dict[str, Any]:
         now = self.clock()
@@ -286,8 +286,8 @@ class HealthService:
             "exposure_policy": {"allowed_metrics": sorted(allowed), "stress_enabled": "wellness.stress" in allowed},
             "limitations": [
                 "Source attribution is evidence-based and does not infer a specific device when Google or Samsung omits it.",
-                "Fitbit observations are available only after the device synchronizes through the Fitbit app.",
-                "Only direct Wear Health Services heart rate may be labeled live.",
+                "Fitbit cloud and Health Connect observations are available only after the device synchronizes through the Fitbit app.",
+                "Only direct Wear Health Services or Fitbit Bluetooth heart rate may be labeled live.",
                 "Missing data is not a normal reading or proof of a synchronization failure.",
             ],
         }
@@ -338,7 +338,7 @@ class HealthService:
             "mixed"
             if len(adapter_ids) > 1
             else "Fitbit"
-            if adapter_id_set <= {"google_health_fitbit", "android_health_connect_fitbit"} and adapter_ids
+            if adapter_id_set <= {"fitbit_ble_heart_rate", "google_health_fitbit", "android_health_connect_fitbit"} and adapter_ids
             else "Samsung"
         )
         return ResponseEnvelope(

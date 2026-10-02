@@ -27,6 +27,7 @@ from .source_registry import adapter_ids_for_watch_source, public_watch_source_f
 from .storage import StateStore
 from .watch_contract import (
     DIRECT_WEAR_LIVE_MAX_AGE_SECONDS,
+    FITBIT_BLE_ADAPTER_ID,
     FITBIT_HEALTH_CONNECT_ADAPTER_ID,
     MAX_BODY_BYTES,
     OBSERVATION_METRICS,
@@ -64,12 +65,13 @@ MAX_SOURCE_READINGS = 200_000
 MAX_CHART_POINTS = 1_200
 HEART_LIVE_MAX_AGE_SECONDS = DIRECT_WEAR_LIVE_MAX_AGE_SECONDS
 FITBIT_BIOFEEDBACK_MAX_AGE_SECONDS = 120
+DIRECT_LIVE_HEART_ADAPTERS = ("wear_health_services", FITBIT_BLE_ADAPTER_ID)
 GALAXY_SOURCE_ADAPTERS = (
     "wear_health_services",
     "android_samsung_health_data",
     "android_health_connect",
 )
-FITBIT_SOURCE_ADAPTERS = ("google_health_fitbit", FITBIT_HEALTH_CONNECT_ADAPTER_ID)
+FITBIT_SOURCE_ADAPTERS = (FITBIT_BLE_ADAPTER_ID, "google_health_fitbit", FITBIT_HEALTH_CONNECT_ADAPTER_ID)
 HISTORICAL_OBSERVATION_METRICS = {
     "activity.total_calories",
     "activity.move_minutes",
@@ -519,7 +521,11 @@ def _fitbit_biofeedback_status(
 ) -> dict[str, Any]:
     heart = latest_by_metric.get("vitals.heart_rate")
     age_seconds = None
+    adapter = None
     if isinstance(heart, dict):
+        provenance = heart.get("provenance")
+        if isinstance(provenance, dict):
+            adapter = provenance.get("adapter")
         recency = heart.get("observation_recency")
         if isinstance(recency, dict) and isinstance(recency.get("measurement_age_seconds"), (int, float)):
             age_seconds = int(recency["measurement_age_seconds"])
@@ -537,6 +543,10 @@ def _fitbit_biofeedback_status(
         status = "unknown"
         reason = "unknown_fitbit_age"
         message = "Fitbit biofeedback is unavailable because the latest Fitbit heart-rate age is unknown."
+    elif adapter == FITBIT_BLE_ADAPTER_ID and age_seconds <= HEART_LIVE_MAX_AGE_SECONDS:
+        status = "live"
+        reason = "fitbit_ble_heart_rate_live"
+        message = "Fitbit Bluetooth heart rate is live enough for Casey biofeedback."
     elif age_seconds <= max_age_seconds:
         status = "current"
         reason = "fitbit_heart_rate_current"
@@ -547,7 +557,8 @@ def _fitbit_biofeedback_status(
         message = "Fitbit biofeedback is unavailable because the latest Fitbit heart-rate record is too old."
     return {
         "status": status,
-        "usable": status == "current",
+        "usable": status in {"live", "current"},
+        "realtime": status == "live",
         "reason": reason,
         "max_age_seconds": max_age_seconds,
         "age_seconds": age_seconds,
@@ -562,6 +573,13 @@ def _has_fitbit_phone_data(observations: list[HealthObservation]) -> bool:
     return any(observation.adapter_id == FITBIT_HEALTH_CONNECT_ADAPTER_ID for observation in observations)
 
 
+def _has_fitbit_non_google_data(observations: list[HealthObservation]) -> bool:
+    return any(
+        observation.adapter_id in {FITBIT_BLE_ADAPTER_ID, FITBIT_HEALTH_CONNECT_ADAPTER_ID}
+        for observation in observations
+    )
+
+
 def _has_current_fitbit_phone_heart(
     observations: list[HealthObservation],
     now: datetime,
@@ -570,6 +588,21 @@ def _has_current_fitbit_phone_heart(
 ) -> bool:
     for observation in observations:
         if observation.adapter_id != FITBIT_HEALTH_CONNECT_ADAPTER_ID or observation.metric != "vitals.heart_rate":
+            continue
+        if max(0, int((now - observation.event_at).total_seconds())) <= max_age_seconds:
+            return True
+    return False
+
+
+def _source_has_current_heart(
+    observations: list[HealthObservation],
+    now: datetime,
+    *,
+    adapter_ids: tuple[str, ...],
+    max_age_seconds: int = HEART_LIVE_MAX_AGE_SECONDS,
+) -> bool:
+    for observation in observations:
+        if observation.adapter_id not in adapter_ids or observation.metric != "vitals.heart_rate":
             continue
         if max(0, int((now - observation.event_at).total_seconds())) <= max_age_seconds:
             return True
@@ -834,7 +867,7 @@ class DashboardApp:
         fitbit_latest, fitbit_observations = self._latest_watch_source_payload(fitbit_adapters, now)
         direct_heart_observation = self.store.latest_watch_by_metric(
             metrics=("vitals.heart_rate",),
-            adapter_ids=("wear_health_services",),
+            adapter_ids=DIRECT_LIVE_HEART_ADAPTERS,
         ).get("vitals.heart_rate")
         direct_heart_payload = None
         if direct_heart_observation is not None:
@@ -863,7 +896,7 @@ class DashboardApp:
                 if key not in seen_heart_samples:
                     heart_samples.append(point)
                     seen_heart_samples.add(key)
-                if record.adapter_id == "wear_health_services":
+                if record.adapter_id in DIRECT_LIVE_HEART_ADAPTERS:
                     direct_heart_samples.append(point)
         heart_samples.sort(key=lambda sample: sample["time"])
         direct_heart_samples.sort(key=lambda sample: sample["time"])
@@ -875,7 +908,7 @@ class DashboardApp:
             heart_sync_summary["last_at"] = direct_heart_payload.get("observation_recency", {}).get("event_at")
         heart_sync = _heart_sync_status(heart_sync_summary, last_upload, now)
         fitbit_last_run = self.store.last_collector_run("google_health_fitbit")
-        fitbit_last_run_for_summary = None if _has_fitbit_phone_data(fitbit_observations) else fitbit_last_run
+        fitbit_last_run_for_summary = None if _has_fitbit_non_google_data(fitbit_observations) else fitbit_last_run
         fitbit_stale_after_seconds = max(1800, int(self.config.google_health_sync_interval_seconds) * 2)
 
         galaxy_configured = bool(
@@ -888,12 +921,13 @@ class DashboardApp:
             galaxy_observations,
             configured=galaxy_configured,
             now=now,
-            live=heart_sync["status"] == "current",
+            live=_source_has_current_heart(galaxy_observations, now, adapter_ids=("wear_health_services",)),
         )
         fitbit_source = self._watch_source_summary(
             fitbit_observations,
-            configured=self.config.google_health_enabled or galaxy_configured,
+            configured=self.config.google_health_enabled or self.config.fitbit_ble_enabled or galaxy_configured,
             now=now,
+            live=_source_has_current_heart(fitbit_observations, now, adapter_ids=(FITBIT_BLE_ADAPTER_ID,)),
             last_run=fitbit_last_run_for_summary,
             stale_after_seconds=fitbit_stale_after_seconds,
         )
@@ -926,7 +960,7 @@ class DashboardApp:
             "history": self.store.watch_history_overview(),
             "retention_days": self.config.watch_retention_days,
             "authoritative_source": "Libre, Samsung Health, Samsung Health Monitor, Fitbit, and Google Health remain authoritative for their device features and official notices.",
-            "sync_limit": "Galaxy heart rate is labeled live only when measured within ten seconds. Fitbit records are synchronized and are never labeled live.",
+            "sync_limit": "Direct Galaxy and Fitbit Bluetooth heart rate are labeled live only when measured within ten seconds. Fitbit cloud and Health Connect records are synchronized history.",
         }
 
     def watch_metric_history(self, metric: str, range_key: str, source: str | None = None) -> dict[str, Any]:
@@ -1261,7 +1295,7 @@ class DashboardApp:
             (
                 observation
                 for observation in self.store.watch_observations(metric="vitals.heart_rate", limit=200)
-                if observation.adapter_id == "wear_health_services"
+                if observation.adapter_id in DIRECT_LIVE_HEART_ADAPTERS
             ),
             None,
         )
@@ -1278,7 +1312,7 @@ class DashboardApp:
         galaxy_latest, galaxy_observations = self._latest_watch_source_payload(galaxy_adapters, now)
         fitbit_latest, fitbit_observations = self._latest_watch_source_payload(fitbit_adapters, now)
         fitbit_last_run = self.store.last_collector_run("google_health_fitbit")
-        fitbit_last_run_for_summary = None if _has_fitbit_phone_data(fitbit_observations) else fitbit_last_run
+        fitbit_last_run_for_summary = None if _has_fitbit_non_google_data(fitbit_observations) else fitbit_last_run
         fitbit_stale_after_seconds = max(1800, int(self.config.google_health_sync_interval_seconds) * 2)
         galaxy_configured = bool(
             self.config.watch_enabled
@@ -1291,12 +1325,13 @@ class DashboardApp:
             galaxy_observations,
             configured=galaxy_configured,
             now=now,
-            live=heart_sync["status"] == "current",
+            live=_source_has_current_heart(galaxy_observations, now, adapter_ids=("wear_health_services",)),
         )
         fitbit_source = self._watch_source_summary(
             fitbit_observations,
-            configured=self.config.google_health_enabled or galaxy_configured,
+            configured=self.config.google_health_enabled or self.config.fitbit_ble_enabled or galaxy_configured,
             now=now,
+            live=_source_has_current_heart(fitbit_observations, now, adapter_ids=(FITBIT_BLE_ADAPTER_ID,)),
             last_run=fitbit_last_run_for_summary,
             stale_after_seconds=fitbit_stale_after_seconds,
         )
