@@ -105,10 +105,10 @@ class FitbitBleHeartService : Service() {
             stopSelf()
             return
         }
-        if (connectBondedFitbit(adapter)) return
         if (scanning) return
         val scanner = adapter.bluetoothLeScanner
         if (scanner == null) {
+            if (connectBondedFitbit(adapter)) return
             setLiveStatus("Bluetooth LE scanner is unavailable.")
             stopSelf()
             return
@@ -121,14 +121,16 @@ class FitbitBleHeartService : Service() {
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
-        scanner.startScan(emptyList<ScanFilter>(), settings, scanCallback)
+        val filters = listOf(ScanFilter.Builder().setServiceUuid(ParcelUuid(HEART_RATE_SERVICE_UUID)).build())
+        scanner.startScan(filters, settings, scanCallback)
         scanTimeoutJob?.cancel()
         scanTimeoutJob = scope.launch {
             delay(SCAN_TIMEOUT_MS)
             if (scanning) {
-                val message = "Fitbit Bluetooth scan saw $scanSeen nearby BLE devices, $scanCandidates possible Fitbit/heart-rate candidates; retrying."
+                val message = "Fitbit Bluetooth scan saw $scanSeen nearby standard heart-rate advertisers, $scanCandidates possible Fitbit heart-rate candidates. In Google Health, turn on Connections > Fitbit > Share heart rate and Always visible, then retrying."
                 stopScan(cancelTimeout = false)
                 setLiveStatus(message)
+                if (connectBondedFitbit(adapter)) return@launch
                 startScan()
             }
         }
@@ -179,9 +181,7 @@ class FitbitBleHeartService : Service() {
 
     private fun isFitbitHeartRateCandidate(result: ScanResult): Boolean {
         val serviceUuids = result.scanRecord?.serviceUuids?.map { it.uuid }.orEmpty()
-        if (HEART_RATE_SERVICE_UUID in serviceUuids) return true
-        val name = result.scanRecord?.deviceName ?: runCatching { result.device.name }.getOrNull()
-        return isFitbitName(name)
+        return HEART_RATE_SERVICE_UUID in serviceUuids
     }
 
     private fun isFitbitName(name: String?): Boolean {
@@ -200,7 +200,13 @@ class FitbitBleHeartService : Service() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED && hasBluetoothConnectPermission()) {
                 setLiveStatus("Fitbit Bluetooth connected. Discovering heart-rate service...")
-                gatt.discoverServices()
+                refreshGattCache(gatt)
+                scope.launch {
+                    delay(750)
+                    if (hasBluetoothConnectPermission()) {
+                        gatt.discoverServices()
+                    }
+                }
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 setLiveStatus("Fitbit Bluetooth heart rate disconnected.")
                 stopSelf()
@@ -212,7 +218,11 @@ class FitbitBleHeartService : Service() {
             val service = gatt.getService(HEART_RATE_SERVICE_UUID)
             val characteristic = service?.getCharacteristic(HEART_RATE_MEASUREMENT_UUID)
             if (characteristic == null) {
-                setLiveStatus("No standard heart-rate characteristic was found.")
+                Log.i(TAG, "Discovered GATT services: ${describeGattServices(gatt)}")
+                setLiveStatus(
+                    "Fitbit is connected, but live heart-rate sharing is not readable yet. In Google Health, open Connections > Fitbit Air > Share heart rate, turn on Always visible, then start Fitbit live heart rate again.",
+                    "No standard Fitbit heart-rate characteristic found; Share heart rate mode may be off.",
+                )
                 stopSelf()
                 return
             }
@@ -245,6 +255,22 @@ class FitbitBleHeartService : Service() {
         }
     }
 
+    private fun refreshGattCache(gatt: BluetoothGatt) {
+        runCatching {
+            val refresh = gatt.javaClass.getMethod("refresh")
+            val result = refresh.invoke(gatt)
+            Log.i(TAG, "Requested Bluetooth GATT cache refresh: $result")
+        }.onFailure {
+            Log.i(TAG, "Bluetooth GATT cache refresh unavailable.")
+        }
+    }
+
+    private fun describeGattServices(gatt: BluetoothGatt): String =
+        gatt.services.joinToString(";") { service ->
+            val characteristics = service.characteristics.joinToString(",") { it.uuid.toString() }
+            "${service.uuid}[$characteristics]"
+        }
+
     private fun handleHeartRatePacket(packet: ByteArray) {
         val measurement = runCatching { parseHeartRate(packet) }.getOrElse {
             setLiveStatus("Fitbit Bluetooth heart-rate packet could not be parsed.")
@@ -261,8 +287,6 @@ class FitbitBleHeartService : Service() {
                 put("time", now.toString())
                 put("value", measurement.bpm)
                 put("unit", "bpm")
-                put("sensor_contact", measurement.sensorContact)
-                if (measurement.rrIntervalsMs.isNotEmpty()) put("rr_intervals_ms", JSONArray(measurement.rrIntervalsMs))
             }
             val observation = JSONObject().apply {
                 put("record_id", "fitbit-ble-${now.toEpochMilli()}-${measurement.bpm.roundToInt()}")
@@ -282,7 +306,6 @@ class FitbitBleHeartService : Service() {
                 })
                 put("payload", JSONObject().apply {
                     put("samples", JSONArray().put(sampleJson))
-                    measurement.energyExpendedKj?.let { put("energy_expended_kj", it) }
                 })
             }
             val batch = WatchBatch(
@@ -308,8 +331,12 @@ class FitbitBleHeartService : Service() {
                         "Fitbit Bluetooth heart-rate sample uploaded.",
                     )
                 }
-                .onFailure {
-                    setLiveStatus("Fitbit Bluetooth upload failed; still listening.")
+                .onFailure { error ->
+                    val message = error.message?.take(180) ?: error::class.java.simpleName
+                    setLiveStatus(
+                        "Fitbit Bluetooth upload failed: $message",
+                        "Fitbit Bluetooth upload failed: $message",
+                    )
                 }
         }
     }

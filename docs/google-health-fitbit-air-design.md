@@ -1,6 +1,6 @@
 # Google Health / Fitbit Air Adapter Design
 
-Document version: 1.2
+Document version: 1.4
 Date: 2026-10-02
 
 ## Purpose
@@ -46,6 +46,8 @@ Health Connect phone ingest accepts Fitbit-origin records only when source-packa
 
 The direct Fitbit Bluetooth path subscribes to the standard Bluetooth LE Heart Rate Service (`0x180D`) and Heart Rate Measurement characteristic (`0x2A37`). The primary runtime is the Android phone companion because Casey carries the phone during runs and the phone is physically close to the Fitbit. The Python BLE probe remains a development diagnostic path on the Windows host. Both paths store heart rate only and avoid storing raw Bluetooth identity. They do not attempt to collect steps, sleep, HRV, oxygen, or recovery data. Those remain synchronized context lanes.
 
+Fitbit Air must be placed into its live heart-rate sharing mode before this standard BLE service is expected to appear. Google's support flow is: open Google Health on the phone, open Connections, select the Fitbit device, choose Share heart rate, tap Get started, then pair/connect from the receiving app or equipment. In Personal State, the receiving app is the Android companion's `Start Fitbit live heart rate` button. A bonded Fitbit connection without the Heart Rate Measurement characteristic means the Air is reachable but is not yet broadcasting the standard live-heart-rate profile to this app. Source: https://support.google.com/googlehealth/answer/14236705?hl=en
+
 ## Initial metrics
 
 - heart rate and resting heart rate
@@ -78,7 +80,7 @@ Casey must:
 - Partial scope consent: only affected data types fail.
 - Fitbit app has not synchronized: last recorded observations remain visible with their true age.
 - Fitbit app has written Health Connect records but no current heart-rate record: Fitbit source is synced, while Casey biofeedback remains stale until a current Fitbit heart sample appears.
-- Fitbit BLE not discovered or disconnected: Casey realtime biofeedback is unavailable unless another explicitly named live source is shown. Slow Fitbit history must not be promoted to live.
+- Fitbit BLE not discovered, disconnected, or failing upload: first enable Google Health > Connections > Fitbit > Share heart rate, then start the companion's Fitbit live heart-rate receiver. If the phone shows samples but the dashboard is stale, check ingest host configuration and schema errors before changing device setup. Casey realtime biofeedback is unavailable unless a fresh direct Fitbit BLE sample or another explicitly named live source is shown. Slow Fitbit history must not be promoted to live.
 - Phone companion upload fails with HTTP 502: inspect the dashboard server traceback before retrying. A live production miss was caused by an additive SQLite table absent from an already-migrated database.
 - Direct watch live-heart polling can drain the Galaxy Watch. Set `WatchLivePollingEnabled = $false` to stop server-side live watch demand while preserving Fitbit/Health Connect sync.
 - Rate limit or transient Google error: collector retries on its next bounded cycle; no tight retry loop.
@@ -107,11 +109,12 @@ Minimum design requirements:
 4. Complete connection with `--code`, then run `personal-state google-health-status`.
 5. Run `personal-state google-health-sync --hours 36` and optionally `personal-state google-health-backfill --days 3650`.
 6. Restart the Personal State collector so continuous bounded synchronization begins.
-7. For realtime testing, install the optional BLE runtime and run `personal-state fitbit-ble-probe --name Fitbit --seconds 300 --print-samples`.
+7. For realtime testing on the phone, open Google Health > Connections > Fitbit > Share heart rate > Get started, then open the Personal State phone companion and tap `Start Fitbit live heart rate`.
+8. For development diagnostics from the Windows host, install the optional BLE runtime and run `personal-state fitbit-ble-probe --name Fitbit --seconds 300 --print-samples`.
 
 ## Validation
 
-Synthetic tests cover read-only OAuth, exact and non-exact device attribution, canonical heart-rate normalization, Bluetooth heart-rate packet parsing, wearable-only reconciliation, Health Connect Fitbit attribution, partial failure behavior, collector persistence, MCP exposure, dashboard source panels, source-filtered metric history, and watch-polling disablement. Real-account validation must confirm paired device identity, granted scopes, data type response shapes, Health Connect Fitbit package evidence, BLE discovery/subscription behavior, reconnect behavior, and advancing timestamps before Casey biofeedback is called complete.
+Synthetic tests cover read-only OAuth, exact and non-exact device attribution, canonical heart-rate normalization, Bluetooth heart-rate packet parsing, wearable-only reconciliation, Health Connect Fitbit attribution, partial failure behavior, collector persistence, MCP exposure, dashboard source panels, source-filtered metric history, and watch-polling disablement. Live validation on 2026-10-02 confirmed the phone can receive Fitbit Air standard BLE heart-rate samples after Share heart rate is enabled, upload them through the authenticated ingest host, and display them as `fitbit_ble_heart_rate` live data. Remaining field validation must confirm range, reconnect behavior, battery impact, and run behavior before treating the lane as operationally proven for Casey.
 
 2026-10-01 live validation status:
 
@@ -131,4 +134,5 @@ Synthetic tests cover read-only OAuth, exact and non-exact device attribution, c
 - Installed the phone companion in place with the same debug signing identity as the already paired app, preserving pairing and Health Connect grants.
 - Repaired the local receiver path: the local dashboard/ingest service was down and the Cloudflare tunnel returned HTTP 530 until the receiver and tunnel were restarted. After repair, the phone uploaded 3,376 Health Connect changes successfully.
 - Direct BLE field result: the phone scan saw hundreds of nearby BLE advertisements but zero Fitbit/heart-rate candidates because the Fitbit did not advertise a public name or Heart Rate Service UUID. The companion then connected directly to the bonded `Google Fitbit Air` LE device. GATT connection and service discovery succeeded, but the standard Heart Rate Measurement characteristic (`0x2A37`) under Heart Rate Service (`0x180D`) was not exposed to this third-party app. No `fitbit_ble_heart_rate` sample was captured.
-- Current conclusion: public standard BLE HR is not available from this Fitbit Air in the tested state. The direct path must either identify a Fitbit-proprietary GATT path, rely on an authorized Fitbit/cloud API with measured cadence, or accept Health Connect/Fitbit app synchronization latency.
+- Follow-up field result: after Google Health `Share heart rate` / `Always visible` was enabled, the phone companion subscribed to Heart Rate Measurement (`0x2A37`) and received about one sample per second from the bonded Fitbit Air. Upload initially failed because the dashboard process had not loaded `WatchIngestHosts`, then because the BLE payload included fields outside the v1 series contract. Restarting the dashboard through `scripts/start_dashboard.ps1` and sending contract-clean samples resolved the path.
+- Current conclusion: public standard BLE HR is verified on Casey's phone for live heart rate. The dashboard showed Fitbit Air `Live`, the live heart card showed Fitbit direct Bluetooth with a 0-second age, and Casey biofeedback reported `fitbit_ble_heart_rate_live`. The remaining validation work is field behavior: 25-30 foot range, reconnect after loss, battery impact, and outdoor run stability without Galaxy fallback.

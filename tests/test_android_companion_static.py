@@ -78,7 +78,11 @@ def test_phone_companion_exposes_fitbit_ble_without_location_permission() -> Non
     assert "Direct Bluetooth LE Heart Rate Service sample received." in service
     assert "adapter.bondedDevices" in service
     assert "Connecting to bonded Fitbit Bluetooth device" in service
-    assert "No standard heart-rate characteristic was found." in service
+    assert "Share heart rate" in service
+    assert "No standard Fitbit heart-rate characteristic found; Share heart rate mode may be off." in service
+    assert '"sensor_contact"' not in service
+    assert '"rr_intervals_ms"' not in service
+    assert '"energy_expended_kj"' not in service
 
 
 def test_fitbit_health_connect_origin_is_labeled_as_external_device() -> None:

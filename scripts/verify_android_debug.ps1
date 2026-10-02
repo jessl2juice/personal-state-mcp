@@ -1,5 +1,6 @@
 param(
     [string]$Aapt2Path = "",
+    [string]$AndroidUserHome = "",
     [switch]$NoAapt2Override
 )
 
@@ -8,7 +9,11 @@ $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $androidRoot = Join-Path $projectRoot "android\health-connect-companion"
 $gradleHome = Join-Path $androidRoot ".gradle"
-$androidUserHome = Join-Path $androidRoot ".android-user-home"
+$androidUserHome = if ($AndroidUserHome) {
+    (Resolve-Path -LiteralPath $AndroidUserHome).Path
+} else {
+    Join-Path $androidRoot ".android-user-home"
+}
 
 New-Item -ItemType Directory -Path $gradleHome -Force | Out-Null
 New-Item -ItemType Directory -Path $androidUserHome -Force | Out-Null

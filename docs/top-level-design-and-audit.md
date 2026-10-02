@@ -2,7 +2,7 @@
 
 Document version: 0.3
 Date: 2026-10-02
-Status: Direct Fitbit BLE realtime lane added; outdoor-device validation remains open
+Status: Direct Fitbit BLE realtime lane verified on phone; field range/run validation remains open
 
 ## Source Basis
 
@@ -120,7 +120,7 @@ Control planes:
 5. Manual refresh must have source-level intent and source-level result reporting.
 6. Disconnect must explicitly handle both credentials and local source data.
 7. Secret fallback may not silently reduce security.
-8. The Google/Fitbit pilot gate remains real-world Casey/Fitbit validation, with direct BLE cadence, reconnect behavior, and cloud catch-up documented before claiming readiness.
+8. The Google/Fitbit pilot gate remains real-world Casey/Fitbit validation: Share heart rate is verified on the phone, and range, reconnect behavior, outdoor run cadence, battery impact, and cloud catch-up still need documented field evidence before claiming operational readiness.
 
 ## Current Design Strengths
 
@@ -570,11 +570,13 @@ Direct Fitbit access is now split into two explicit lanes because Casey's realti
 - `google_health_fitbit`: Google Health synchronized records. Source class `synchronized_wearable_history`. Useful for history and source-of-record context, not live biofeedback.
 - `android_health_connect_fitbit`: phone-local Health Connect Fitbit records. Source class `phone_synchronized_fitbit_history`. Useful for corroboration, not live biofeedback unless the record age happens to satisfy the Casey currentness window.
 
+Setup rule: Fitbit Air must be in Google Health's live Share heart rate mode before Personal State expects the standard Bluetooth Heart Rate Service. On the phone, open Google Health > Connections > Fitbit > Share heart rate > Get started, then start the Personal State companion's Fitbit live heart-rate receiver. Official source: https://support.google.com/googlehealth/answer/14236705?hl=en
+
 Fallback rule: never silently fall back to Galaxy Watch for Casey's Fitbit biofeedback. If Galaxy is displayed, name it visibly as Galaxy. If Fitbit BLE is absent or stale, Casey realtime biofeedback is unavailable even when slower Fitbit history exists.
 
-Verification rule: run with Casey's phone and Fitbit during an outdoor run. Confirm whether `fitbit_ble_heart_rate` advances at a live cadence without relying on Galaxy, and record reconnect behavior, sample age, battery impact, and whether the Fitbit app's later cloud sync recovers.
+Verification rule: run with Casey's phone and Fitbit during an outdoor run. Confirm that `fitbit_ble_heart_rate` advances at a live cadence without relying on Galaxy, and record range, reconnect behavior, sample age, battery impact, and whether the Fitbit app's later cloud sync recovers.
 
-2026-10-02 field result: the phone companion was updated in place without losing pairing, Bluetooth permissions were granted, and the local receiver/tunnel path was repaired. The phone then uploaded 3,376 Health Connect changes successfully. The BLE probe connected to the bonded `Google Fitbit Air` LE device and completed GATT discovery, but the standard Heart Rate Service / Heart Rate Measurement characteristic was not exposed to the companion. Public standard BLE HR is therefore not a verified Casey realtime path for this device state. The next design path is Fitbit-proprietary GATT research or a measured Fitbit/cloud API cadence path; synchronized Health Connect Fitbit data remains useful context but is not adequate as Casey realtime biofeedback when stale.
+2026-10-02 field result: the phone companion was updated in place without losing pairing, Bluetooth permissions were granted, and the local receiver/tunnel path was repaired. The phone uploaded 3,376 Health Connect changes successfully. Initial BLE discovery connected to the bonded `Google Fitbit Air` but did not expose Heart Rate Measurement until Google Health's Fitbit Air `Share heart rate` / `Always visible` mode was enabled. After that setup gate was active, the phone companion subscribed to the standard Heart Rate Measurement characteristic (`0x2A37`), received about one sample per second, and uploaded contract-clean `fitbit_ble_heart_rate` observations through the authenticated ingest host. The dashboard verified Fitbit Air `Live`, `Casey biofeedback live`, and the live heart card as `Fitbit direct Bluetooth` with 0-second age. A frontend source-boundary fix now prevents Fitbit live heart rate from making the Galaxy panel appear live; Galaxy remains recorded unless its own `wear_health_services` sample is current.
 
 ## Notion Source Links
 

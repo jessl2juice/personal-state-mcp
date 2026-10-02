@@ -383,14 +383,16 @@
 
     const galaxy = watch.sources?.galaxy || {};
     const directHeart = payload.watch?.direct_heart_rate || watch.direct_heart_rate;
+    const galaxyDirectHeart = directHeart?.provenance?.adapter === "wear_health_services" ? directHeart : galaxy["vitals.heart_rate"];
     const galaxyMetrics = Number(galaxy.metric_count || 0);
     const galaxyAge = galaxy.age_seconds === null || galaxy.age_seconds === undefined ? "No measurements" : formatAge(galaxy.age_seconds);
-    const directHeartCurrent = payload.watch?.heart_rate_sync?.status === "current";
+    const directHeartCurrent = galaxyDirectHeart?.provenance?.adapter === "wear_health_services"
+      && galaxyDirectHeart?.observation_recency?.status === "live";
     setSource(
       "galaxy",
       directHeartCurrent ? "Direct heart live" : galaxy.status === "synced" ? "Recorded" : galaxy.status === "ready" ? "Ready to sync" : "Not connected",
-      directHeart && directHeartCurrent
-        ? `${watchMetricPresentation("vitals.heart_rate", directHeart).value} bpm live · ${galaxyMetrics} recorded metrics`
+      galaxyDirectHeart && directHeartCurrent
+        ? `${watchMetricPresentation("vitals.heart_rate", galaxyDirectHeart).value} bpm live · ${galaxyMetrics} recorded metrics`
         : `${galaxyAge} · ${galaxyMetrics} metrics`,
       directHeartCurrent ? "live" : galaxy.status === "synced" ? "synced" : "idle",
     );
@@ -400,27 +402,31 @@
     const fitbitAge = fitbit.age_seconds === null || fitbit.age_seconds === undefined ? "No measurements" : formatAge(fitbit.age_seconds);
     const fitbitStatusLabel = fitbit.status === "sync_error" || fitbit.status === "error"
       ? "Sync failing"
-      : fitbit.status === "stale"
-        ? "Stale sync"
-        : fitbit.status === "synced"
-          ? "Synced"
-          : fitbit.status === "ready"
-            ? "Ready to sync"
-            : "Not connected";
+      : fitbit.status === "live"
+        ? "Live"
+        : fitbit.status === "stale"
+          ? "Stale sync"
+          : fitbit.status === "synced"
+            ? "Synced"
+            : fitbit.status === "ready"
+              ? "Ready to sync"
+              : "Not connected";
     const fitbitStatusDetail = fitbit.status === "sync_error" || fitbit.status === "error"
       ? `${fitbitAge} · ${fitbitMetrics} stored metrics · Google Health refresh failing`
-      : fitbit.status === "stale"
-        ? `${fitbitAge} · ${fitbitMetrics} stored metrics · refresh overdue`
-        : fitbit.status === "synced"
-          ? `${fitbitAge} · ${fitbitMetrics} metrics`
-          : fitbit.status === "ready"
-            ? "Authorization or first sync pending"
-            : "OAuth setup pending";
+      : fitbit.status === "live"
+        ? `${fitbitAge} · ${fitbitMetrics} metrics · Fitbit Bluetooth live`
+        : fitbit.status === "stale"
+          ? `${fitbitAge} · ${fitbitMetrics} stored metrics · refresh overdue`
+          : fitbit.status === "synced"
+            ? `${fitbitAge} · ${fitbitMetrics} metrics`
+            : fitbit.status === "ready"
+              ? "Authorization or first sync pending"
+              : "OAuth setup pending";
     setSource(
       "fitbit",
       fitbitStatusLabel,
       fitbitStatusDetail,
-      fitbit.status === "synced" ? "synced" : fitbit.status === "stale" ? "idle" : fitbit.status === "sync_error" || fitbit.status === "error" ? "error" : "idle",
+      fitbit.status === "live" ? "live" : fitbit.status === "synced" ? "synced" : fitbit.status === "stale" ? "idle" : fitbit.status === "sync_error" || fitbit.status === "error" ? "error" : "idle",
     );
     renderFitbitAirPanel(watch);
     renderGalaxyWatchPanel(watch);
@@ -711,6 +717,9 @@
     if (source.status === "sync_error" || source.status === "error") {
       status.textContent = `${Number(source.metric_count || cards.length).toLocaleString()} stored metrics · Google Health sync failing`;
       status.className = "state-chip error";
+    } else if (source.status === "live") {
+      status.textContent = `${Number(source.metric_count || cards.length).toLocaleString()} metrics · latest ${formatAge(source.age_seconds)} · Fitbit Bluetooth live`;
+      status.className = "state-chip ok";
     } else if (source.status === "stale") {
       status.textContent = `${Number(source.metric_count || cards.length).toLocaleString()} stored metrics · latest ${formatAge(source.age_seconds)} · refresh overdue`;
       status.className = "state-chip near";
@@ -756,7 +765,9 @@
 
     const source = watch?.sources?.galaxy || {};
     const galaxy = watch?.latest_by_source?.galaxy || {};
-    const directHeart = watch?.direct_heart_rate || galaxy["vitals.heart_rate"];
+    const directHeart = watch?.direct_heart_rate?.provenance?.adapter === "wear_health_services"
+      ? watch.direct_heart_rate
+      : galaxy["vitals.heart_rate"];
     const pick = (metrics) => {
       for (const metric of metrics) {
         const observation = metric === "vitals.heart_rate" ? directHeart : galaxy[metric];
@@ -779,7 +790,8 @@
       .filter(Boolean);
 
     const metricCount = Number(source.metric_count || Object.keys(galaxy).length || cards.length);
-    const heartCurrent = watch?.heart_rate_sync?.status === "current";
+    const heartCurrent = directHeart?.provenance?.adapter === "wear_health_services"
+      && directHeart?.observation_recency?.status === "live";
     if (source.status === "live" || heartCurrent) {
       status.textContent = `Direct heart live · ${metricCount.toLocaleString()} recorded metrics · latest ${formatAge(source.age_seconds)}`;
       status.className = "state-chip ok";

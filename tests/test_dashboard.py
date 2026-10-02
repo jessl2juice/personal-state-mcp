@@ -603,6 +603,10 @@ def test_dashboard_places_all_current_signals_before_history_charts() -> None:
     assert "result.current_biofeedback_status?.usable" in javascript
     assert "Direct heart live" in javascript
     assert "recorded metrics" in javascript
+    assert 'fitbit.status === "live"' in javascript
+    assert "Fitbit Bluetooth live" in javascript
+    assert 'directHeart?.provenance?.adapter === "wear_health_services"' in javascript
+    assert 'galaxyDirectHeart?.provenance?.adapter === "wear_health_services"' in javascript
     assert "Live · ${metricCount" not in javascript
     assert '"No current data"' in javascript
     assert "Last recorded:" in javascript

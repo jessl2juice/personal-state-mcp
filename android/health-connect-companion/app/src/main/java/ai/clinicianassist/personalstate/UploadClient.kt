@@ -39,7 +39,7 @@ class UploadClient {
             val code = connection.responseCode
             if (code !in 200..299) {
                 val error = connection.errorStream?.bufferedReader()?.use { it.readText().take(300) } ?: "no response body"
-                error("Upload HTTP $code: $error")
+                error("Upload to ${endpoint.host} HTTP $code: $error")
             }
             true
         } finally {
