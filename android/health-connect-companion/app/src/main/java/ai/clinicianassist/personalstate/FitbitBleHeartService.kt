@@ -48,9 +48,11 @@ class FitbitBleHeartService : Service() {
     private var bluetoothGatt: BluetoothGatt? = null
     private var scanning = false
     private var scanTimeoutJob: Job? = null
+    private var reconnectJob: Job? = null
     private var scanAttempt = 0
     private var scanSeen = 0
     private var scanCandidates = 0
+    private var stopRequested = false
 
     override fun onCreate() {
         super.onCreate()
@@ -62,6 +64,7 @@ class FitbitBleHeartService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                stopRequested = true
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -71,13 +74,16 @@ class FitbitBleHeartService : Service() {
     }
 
     override fun onDestroy() {
+        reconnectJob?.cancel()
         stopScan()
         if (hasBluetoothConnectPermission()) {
             runCatching { bluetoothGatt?.disconnect() }
             runCatching { bluetoothGatt?.close() }
         }
         bluetoothGatt = null
-        setLiveStatus("Fitbit Bluetooth heart-rate stream stopped.")
+        if (stopRequested) {
+            setLiveStatus("Fitbit Bluetooth heart-rate stream stopped.")
+        }
         scope.cancel()
         super.onDestroy()
     }
@@ -88,6 +94,7 @@ class FitbitBleHeartService : Service() {
         (getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
 
     private fun startScan() {
+        reconnectJob?.cancel()
         val pairing = store.pairing()
         if (pairing == null) {
             setLiveStatus("Pair this phone before starting Fitbit Bluetooth heart rate.")
@@ -208,8 +215,18 @@ class FitbitBleHeartService : Service() {
                     }
                 }
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                setLiveStatus("Fitbit Bluetooth heart rate disconnected.")
-                stopSelf()
+                runCatching { gatt.close() }
+                if (stopRequested) {
+                    setLiveStatus("Fitbit Bluetooth heart rate disconnected.")
+                    stopSelf()
+                    return
+                }
+                setLiveStatus("Fitbit Bluetooth heart rate disconnected; reconnecting...")
+                reconnectJob?.cancel()
+                reconnectJob = scope.launch {
+                    delay(RECONNECT_DELAY_MS)
+                    startScan()
+                }
             }
         }
 
@@ -422,6 +439,7 @@ class FitbitBleHeartService : Service() {
         private const val CHANNEL_ID = "personal-state-fitbit-ble"
         private const val NOTIFICATION_ID = 4202
         private const val SCAN_TIMEOUT_MS = 15_000L
+        private const val RECONNECT_DELAY_MS = 2_000L
         private val FITBIT_NAME_MARKERS = listOf("fitbit", "sense", "versa", "charge", "inspire", "ace", "luxe")
         private val HEART_RATE_SERVICE_UUID: UUID = UUID.fromString("0000180d-0000-1000-8000-00805f9b34fb")
         private val HEART_RATE_MEASUREMENT_UUID: UUID = UUID.fromString("00002a37-0000-1000-8000-00805f9b34fb")

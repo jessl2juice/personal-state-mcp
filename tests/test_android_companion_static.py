@@ -79,6 +79,8 @@ def test_phone_companion_exposes_fitbit_ble_without_location_permission() -> Non
     assert "adapter.bondedDevices" in service
     assert "Connecting to bonded Fitbit Bluetooth device" in service
     assert "Share heart rate" in service
+    assert "Fitbit Bluetooth heart rate disconnected; reconnecting..." in service
+    assert "RECONNECT_DELAY_MS" in service
     assert "No standard Fitbit heart-rate characteristic found; Share heart rate mode may be off." in service
     assert '"sensor_contact"' not in service
     assert '"rr_intervals_ms"' not in service
