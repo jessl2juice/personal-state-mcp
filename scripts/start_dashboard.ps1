@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot "load_settings.ps1")
 Import-PersonalStateSettings -ConfigPath $ConfigPath | Out-Null
+Set-PersonalStateSourcePath -ProjectRoot $projectRoot
 $python = Resolve-PersonalStatePython -ProjectRoot $projectRoot
 
 Set-Location $projectRoot

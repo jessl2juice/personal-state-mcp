@@ -57,3 +57,18 @@ function Resolve-PersonalStatePython {
 
     throw "Personal State's Python environment is missing. Run the installer again to repair it."
 }
+
+function Set-PersonalStateSourcePath {
+    param([string]$ProjectRoot)
+
+    $sourcePath = Join-Path $ProjectRoot "src"
+    if (-not (Test-Path -LiteralPath $sourcePath)) { return }
+
+    $paths = @()
+    if ($env:PYTHONPATH) {
+        $paths = $env:PYTHONPATH -split [IO.Path]::PathSeparator
+    }
+    if ($paths -notcontains $sourcePath) {
+        $env:PYTHONPATH = (@($sourcePath) + $paths) -join [IO.Path]::PathSeparator
+    }
+}

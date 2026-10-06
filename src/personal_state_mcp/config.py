@@ -70,7 +70,7 @@ class AppConfig:
     watch_device_secret: str | None = None
     watch_identifier_key: str | None = None
     watch_retention_days: int = 3650
-    watch_live_polling_enabled: bool = True
+    watch_live_polling_enabled: bool = False
     google_health_enabled: bool = False
     google_health_sync_interval_seconds: int = 300
     google_health_recent_hours: int = 36
@@ -148,7 +148,7 @@ def load_config() -> AppConfig:
         watch_device_secret=watch_device_secret,
         watch_identifier_key=watch_identifier_key,
         watch_retention_days=_int_env("PERSONAL_STATE_WATCH_RETENTION_DAYS", 3650),
-        watch_live_polling_enabled=_bool_env("PERSONAL_STATE_WATCH_LIVE_POLLING_ENABLED", True),
+        watch_live_polling_enabled=_bool_env("PERSONAL_STATE_WATCH_LIVE_POLLING_ENABLED", False),
         google_health_enabled=_bool_env("PERSONAL_STATE_GOOGLE_HEALTH_ENABLED", google_health_connected),
         google_health_sync_interval_seconds=_int_env("PERSONAL_STATE_GOOGLE_HEALTH_SYNC_SECONDS", 300),
         google_health_recent_hours=_int_env("PERSONAL_STATE_GOOGLE_HEALTH_RECENT_HOURS", 36),

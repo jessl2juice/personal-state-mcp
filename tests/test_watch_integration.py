@@ -159,6 +159,7 @@ def signed_demand_headers(now: datetime) -> dict[str, str]:
 def test_mcp_access_creates_a_signed_short_live_heart_lease() -> None:
     with tempfile.TemporaryDirectory() as directory:
         cfg = config(Path(directory) / "state.db")
+        cfg = AppConfig(**{**cfg.__dict__, "watch_live_polling_enabled": True})
         app = DashboardApp(cfg)
         now = datetime.now(timezone.utc).replace(microsecond=0)
         service = HealthService(config=cfg, store=app.store, clock=lambda: now)

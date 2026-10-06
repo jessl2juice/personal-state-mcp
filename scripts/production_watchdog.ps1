@@ -39,8 +39,8 @@ function Start-TaskIfStopped([string]$Name) {
 function Test-Dashboard {
     try {
         $headers = @{ Host = $dashboardHealthHost }
-        $response = Invoke-RestMethod -Uri "http://127.0.0.1:8766/api/live" -Headers $headers -TimeoutSec 15
-        return $null -ne $response.generated_at
+        $response = Invoke-RestMethod -Uri "http://127.0.0.1:8766/api/health" -Headers $headers -TimeoutSec 15
+        return $response.ok -eq $true
     }
     catch {
         return $false
